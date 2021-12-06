@@ -1,6 +1,10 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+// Copyright (c) 2014-2020 Sebastien Rombauts (sebastien.rombauts@gmail.com)
+//
+// Distributed under the MIT License (MIT) (See accompanying file LICENSE.txt
+// or copy at http://opensource.org/licenses/MIT)
 
 #include "GitSourceControlProvider.h"
+
 #include "HAL/PlatformProcess.h"
 #include "Misc/Paths.h"
 #include "Misc/QueuedThreadPool.h"
@@ -8,24 +12,34 @@
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "GitSourceControlCommand.h"
 #include "ISourceControlModule.h"
-#include "SourceControlHelpers.h"
 #include "GitSourceControlModule.h"
 #include "GitSourceControlUtils.h"
 #include "SGitSourceControlSettings.h"
-#include "SourceControlOperations.h"
 #include "Logging/MessageLog.h"
 #include "ScopedSourceControlProgress.h"
+#include "SourceControlHelpers.h"
+#include "SourceControlOperations.h"
+#include "Interfaces/IPluginManager.h"
 
 #define LOCTEXT_NAMESPACE "GitSourceControl"
 
-static FName ProviderName("Git");
+static FName ProviderName("Git LFS 2");
 
 void FGitSourceControlProvider::Init(bool bForceConnection)
 {
 	// Init() is called multiple times at startup: do not check git each time
 	if(!bGitAvailable)
 	{
+		const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("GitSourceControl"));
+		if(Plugin.IsValid())
+		{
+			UE_LOG(LogSourceControl, Log, TEXT("Git plugin '%s'"), *(Plugin->GetDescriptor().VersionName));
+		}
+
 		CheckGitAvailability();
+
+		const FGitSourceControlModule& GitSourceControl = FModuleManager::GetModuleChecked<FGitSourceControlModule>("GitSourceControl");
+		bUsingGitLfsLocking = GitSourceControl.AccessSettings().IsUsingGitLfsLocking();
 	}
 
 	// bForceConnection: not used anymore
@@ -33,7 +47,7 @@ void FGitSourceControlProvider::Init(bool bForceConnection)
 
 void FGitSourceControlProvider::CheckGitAvailability()
 {
-	FGitSourceControlModule& GitSourceControl = FModuleManager::LoadModuleChecked<FGitSourceControlModule>("GitSourceControl");
+	FGitSourceControlModule& GitSourceControl = FModuleManager::GetModuleChecked<FGitSourceControlModule>("GitSourceControl");
 	FString PathToGitBinary = GitSourceControl.AccessSettings().GetBinaryPath();
 	if(PathToGitBinary.IsEmpty())
 	{
@@ -47,6 +61,7 @@ void FGitSourceControlProvider::CheckGitAvailability()
 
 	if(!PathToGitBinary.IsEmpty())
 	{
+		UE_LOG(LogSourceControl, Log, TEXT("Using '%s'"), *PathToGitBinary);
 		bGitAvailable = GitSourceControlUtils::CheckGitAvailability(PathToGitBinary, &GitVersion);
 		if(bGitAvailable)
 		{
@@ -61,11 +76,13 @@ void FGitSourceControlProvider::CheckGitAvailability()
 
 void FGitSourceControlProvider::CheckRepositoryStatus(const FString& InPathToGitBinary)
 {
-	// Find the path to the root Git directory (if any)
+	// Find the path to the root Git directory (if any, else uses the ProjectDir)
 	const FString PathToProjectDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir());
 	bGitRepositoryFound = GitSourceControlUtils::FindRootDirectory(PathToProjectDir, PathToRepositoryRoot);
 	if(bGitRepositoryFound)
 	{
+		GitSourceControlMenu.Register();
+
 		// Get branch name
 		bGitRepositoryFound = GitSourceControlUtils::GetBranchName(InPathToGitBinary, PathToRepositoryRoot, BranchName);
 		if(bGitRepositoryFound)
@@ -90,6 +107,8 @@ void FGitSourceControlProvider::Close()
 {
 	// clear the cache
 	StateCache.Empty();
+	// Remove all extensions to the "Source Control" menu in the Editor Toolbar
+	GitSourceControlMenu.Unregister();
 
 	bGitAvailable = false;
 	bGitRepositoryFound = false;
@@ -108,7 +127,7 @@ TSharedRef<FGitSourceControlState, ESPMode::ThreadSafe> FGitSourceControlProvide
 	else
 	{
 		// cache an unknown state for this item
-		TSharedRef<FGitSourceControlState, ESPMode::ThreadSafe> NewState = MakeShareable( new FGitSourceControlState(Filename) );
+		TSharedRef<FGitSourceControlState, ESPMode::ThreadSafe> NewState = MakeShareable( new FGitSourceControlState(Filename, bUsingGitLfsLocking) );
 		StateCache.Add(Filename, NewState);
 		return NewState;
 	}
@@ -119,11 +138,13 @@ FText FGitSourceControlProvider::GetStatusText() const
 	FFormatNamedArguments Args;
 	Args.Add( TEXT("RepositoryName"), FText::FromString(PathToRepositoryRoot) );
 	Args.Add( TEXT("RemoteUrl"), FText::FromString(RemoteUrl) );
-	Args.Add( TEXT("BranchName"), FText::FromString(BranchName) );
 	Args.Add( TEXT("UserName"), FText::FromString(UserName) );
 	Args.Add( TEXT("UserEmail"), FText::FromString(UserEmail) );
+	Args.Add( TEXT("BranchName"), FText::FromString(BranchName) );
+	Args.Add( TEXT("CommitId"), FText::FromString(CommitId.Left(8)) );
+	Args.Add( TEXT("CommitSummary"), FText::FromString(CommitSummary) );
 
-	return FText::Format( NSLOCTEXT("Status", "Provider: Git\nEnabledLabel", "Local repository: {RepositoryName}\nRemote origin: {RemoteUrl}\nBranch: {BranchName}\nUser: {UserName}\nE-mail: {UserEmail}"), Args );
+	return FText::Format( NSLOCTEXT("Status", "Provider: Git\nEnabledLabel", "Local repository: {RepositoryName}\nRemote origin: {RemoteUrl}\nUser: {UserName}\nE-mail: {UserEmail}\n[{BranchName} {CommitId}] {CommitSummary}"), Args );
 }
 
 /** Quick check if source control is enabled */
@@ -184,6 +205,17 @@ bool FGitSourceControlProvider::RemoveFileFromCache(const FString& Filename)
 	return StateCache.Remove(Filename) > 0;
 }
 
+/** Get files in cache */
+TArray<FString> FGitSourceControlProvider::GetFilesInCache()
+{
+	TArray<FString> Files;
+	for (const auto& State : StateCache)
+	{
+		Files.Add(State.Key);
+	}
+	return Files;
+}
+
 FDelegateHandle FGitSourceControlProvider::RegisterSourceControlStateChanged_Handle( const FSourceControlStateChanged::FDelegate& SourceControlStateChanged )
 {
 	return OnSourceControlStateChanged.Add( SourceControlStateChanged );
@@ -196,9 +228,8 @@ void FGitSourceControlProvider::UnregisterSourceControlStateChanged_Handle( FDel
 
 ECommandResult::Type FGitSourceControlProvider::Execute( const TSharedRef<ISourceControlOperation, ESPMode::ThreadSafe>& InOperation, const TArray<FString>& InFiles, EConcurrency::Type InConcurrency, const FSourceControlOperationComplete& InOperationCompleteDelegate )
 {
-	if(!IsEnabled() && !(InOperation->GetName() == "Connect")) // Only Connect operation allowed while not Enabled (Connected)
+	if(!IsEnabled() && !(InOperation->GetName() == "Connect")) // Only Connect operation allowed while not Enabled (Repository found)
 	{
-		// Note that IsEnabled() always returns true so unless it is changed, this code will never be executed
 		InOperationCompleteDelegate.ExecuteIfBound(InOperation, ECommandResult::Failed);
 		return ECommandResult::Failed;
 	}
@@ -229,11 +260,15 @@ ECommandResult::Type FGitSourceControlProvider::Execute( const TSharedRef<ISourc
 	if(InConcurrency == EConcurrency::Synchronous)
 	{
 		Command->bAutoDelete = false;
+
+		UE_LOG(LogSourceControl, Log, TEXT("ExecuteSynchronousCommand(%s)"), *InOperation->GetName().ToString());
 		return ExecuteSynchronousCommand(*Command, InOperation->GetInProgressString());
 	}
 	else
 	{
 		Command->bAutoDelete = true;
+
+		UE_LOG(LogSourceControl, Log, TEXT("IssueAsynchronousCommand(%s)"), *InOperation->GetName().ToString());
 		return IssueCommand(*Command);
 	}
 }
@@ -249,7 +284,7 @@ void FGitSourceControlProvider::CancelOperation( const TSharedRef<ISourceControl
 
 bool FGitSourceControlProvider::UsesLocalReadOnlyState() const
 {
-	return false;
+	return bUsingGitLfsLocking; // Git LFS Lock uses read-only state
 }
 
 bool FGitSourceControlProvider::UsesChangelists() const
@@ -259,7 +294,7 @@ bool FGitSourceControlProvider::UsesChangelists() const
 
 bool FGitSourceControlProvider::UsesCheckout() const
 {
-	return false;
+	return bUsingGitLfsLocking; // Git LFS Lock uses read-only state
 }
 
 TSharedPtr<IGitSourceControlWorker, ESPMode::ThreadSafe> FGitSourceControlProvider::CreateWorker(const FName& InOperationName) const
@@ -293,9 +328,20 @@ void FGitSourceControlProvider::OutputCommandMessages(const FGitSourceControlCom
 	}
 }
 
-void FGitSourceControlProvider::Tick()
+void FGitSourceControlProvider::UpdateRepositoryStatus(const class FGitSourceControlCommand& InCommand)
 {
+	// For all operations running UpdateStatus, get Commit informations:
+	if (!InCommand.CommitId.IsEmpty())
+	{
+		CommitId = InCommand.CommitId;
+		CommitSummary = InCommand.CommitSummary;
+	}
+}
+
+void FGitSourceControlProvider::Tick()
+{	
 	bool bStatesUpdated = false;
+
 	for(int32 CommandIndex = 0; CommandIndex < CommandQueue.Num(); ++CommandIndex)
 	{
 		FGitSourceControlCommand& Command = *CommandQueue[CommandIndex];
@@ -304,12 +350,16 @@ void FGitSourceControlProvider::Tick()
 			// Remove command from the queue
 			CommandQueue.RemoveAt(CommandIndex);
 
+			// Update respository status on UpdateStatus operations
+			UpdateRepositoryStatus(Command);
+
 			// let command update the states of any files
 			bStatesUpdated |= Command.Worker->UpdateStates();
 
 			// dump any messages to output log
 			OutputCommandMessages(Command);
 
+			// run the completion delegate callback if we have one bound
 			Command.ReturnResults();
 
 			// commands that are left in the array during a tick need to be deleted
@@ -335,6 +385,9 @@ TArray< TSharedRef<ISourceControlLabel> > FGitSourceControlProvider::GetLabels( 
 {
 	TArray< TSharedRef<ISourceControlLabel> > Tags;
 
+	// NOTE list labels. Called by CrashDebugHelper() (to remote debug Engine crash)
+	//					 and by SourceControlHelpers::AnnotateFile() (to add source file to report)
+	// Reserved for internal use by Epic Games with Perforce only
 	return Tags;
 }
 
@@ -364,7 +417,7 @@ ECommandResult::Type FGitSourceControlProvider::ExecuteSynchronousCommand(FGitSo
 
 			Progress.Tick();
 
-			// Sleep for a bit so we don't busy-wait so much.
+			// Sleep so we don't busy-wait so much.
 			FPlatformProcess::Sleep(0.01f);
 		}
 
@@ -410,4 +463,5 @@ ECommandResult::Type FGitSourceControlProvider::IssueCommand(FGitSourceControlCo
 		return InCommand.ReturnResults();
 	}
 }
+
 #undef LOCTEXT_NAMESPACE

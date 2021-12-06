@@ -1,4 +1,7 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+// Copyright (c) 2014-2020 Sebastien Rombauts (sebastien.rombauts@gmail.com)
+//
+// Distributed under the MIT License (MIT) (See accompanying file LICENSE.txt
+// or copy at http://opensource.org/licenses/MIT)
 
 #pragma once
 
@@ -8,15 +11,20 @@
 #include "ISourceControlProvider.h"
 #include "IGitSourceControlWorker.h"
 #include "GitSourceControlState.h"
+#include "GitSourceControlMenu.h"
 
 class FGitSourceControlCommand;
 
 DECLARE_DELEGATE_RetVal(FGitSourceControlWorkerRef, FGetGitSourceControlWorker)
 
+/// Git version and capabilites extracted from the string "git version 2.11.0.windows.3"
 struct FGitVersion
 {
-	int Major;
-	int Minor;
+	// Git version extracted from the string "git version 2.11.0.windows.3" (Windows) or "git version 2.11.0" (Linux/Mac/Cygwin/WSL)
+	int Major;   // 2	Major version number
+	int Minor;   // 11	Minor version number
+	int Patch;   // 0	Patch/bugfix number
+	int Windows; // 3	Windows specific revision number (under Windows only)
 
 	uint32 bHasCatFileWithFilters : 1;
 	uint32 bHasGitLfs : 1;
@@ -25,6 +33,8 @@ struct FGitVersion
 	FGitVersion() 
 		: Major(0)
 		, Minor(0)
+		, Patch(0)
+		, Windows(0)
 		, bHasCatFileWithFilters(false)
 		, bHasGitLfs(false)
 		, bHasGitLfsLocking(false)
@@ -54,9 +64,9 @@ public:
 	virtual bool IsEnabled() const override;
 	virtual bool IsAvailable() const override;
 	virtual const FName& GetName(void) const override;
-	virtual bool QueryStateBranchConfig(const FString& ConfigSrc, const FString& ConfigDest) override { return false;  }
-	virtual void RegisterStateBranches(const TArray<FString>& BranchNames, const FString& ContentRoot) override {}
-	virtual int32 GetStateBranchIndex(const FString& InBranchName) const override { return INDEX_NONE; }
+	virtual bool QueryStateBranchConfig(const FString& ConfigSrc, const FString& ConfigDest) /* override UE4.20 */ { return false; }
+	virtual void RegisterStateBranches(const TArray<FString>& BranchNames, const FString& ContentRoot) /* override UE4.20 */ {}
+	virtual int32 GetStateBranchIndex(const FString& InBranchName) const /* override UE4.20 */ { return INDEX_NONE; }
 	virtual ECommandResult::Type GetState( const TArray<FString>& InFiles, TArray< TSharedRef<ISourceControlState, ESPMode::ThreadSafe> >& OutState, EStateCacheUsage::Type InStateCacheUsage ) override;
 	virtual TArray<FSourceControlStateRef> GetCachedStateByPredicate(TFunctionRef<bool(const FSourceControlStateRef&)> Predicate) const override;
 	virtual FDelegateHandle RegisterSourceControlStateChanged_Handle(const FSourceControlStateChanged::FDelegate& SourceControlStateChanged) override;
@@ -90,7 +100,7 @@ public:
 	}
 
 	/** Git version for feature checking */
-	inline const FGitVersion& GetGitVersion()
+	inline const FGitVersion& GetGitVersion() const
 	{
 		return GitVersion;
 	}
@@ -131,6 +141,9 @@ public:
 	/** Remove a named file from the state cache */
 	bool RemoveFileFromCache(const FString& Filename);
 
+	/** Get files in cache */
+	TArray<FString> GetFilesInCache();
+
 private:
 
 	/** Is git binary found and working. */
@@ -138,6 +151,9 @@ private:
 
 	/** Is git repository found. */
 	bool bGitRepositoryFound;
+
+	/** Is LFS File Locking enabled? */
+	bool bUsingGitLfsLocking = false;
 
 	/** Helper function for Execute() */
 	TSharedPtr<class IGitSourceControlWorker, ESPMode::ThreadSafe> CreateWorker(const FName& InOperationName) const;
@@ -149,6 +165,9 @@ private:
 
 	/** Output any messages this command holds */
 	void OutputCommandMessages(const class FGitSourceControlCommand& InCommand) const;
+
+	/** Update repository status on Connect and UpdateStatus operations */
+	void UpdateRepositoryStatus(const class FGitSourceControlCommand& InCommand);
 
 	/** Path to the root of the Git repository: can be the ProjectDir itself, or any parent directory (found by the "Connect" operation) */
 	FString PathToRepositoryRoot;
@@ -165,6 +184,12 @@ private:
 	/** URL of the "origin" defaut remote server */
 	FString RemoteUrl;
 
+	/** Current Commit full SHA1 */
+	FString CommitId;
+
+	/** Current Commit description's Summary */
+	FString CommitSummary;
+
 	/** State cache */
 	TMap<FString, TSharedRef<class FGitSourceControlState, ESPMode::ThreadSafe> > StateCache;
 
@@ -179,4 +204,7 @@ private:
 
 	/** Git version for feature checking */
 	FGitVersion GitVersion;
+
+	/** Source Control Menu Extension */
+	FGitSourceControlMenu GitSourceControlMenu;
 };
