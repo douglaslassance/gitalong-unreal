@@ -1,4 +1,7 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+// Copyright (c) 2014-2020 Sebastien Rombauts (sebastien.rombauts@gmail.com)
+//
+// Distributed under the MIT License (MIT) (See accompanying file LICENSE.txt
+// or copy at http://opensource.org/licenses/MIT)
 
 #pragma once
 
@@ -45,6 +48,9 @@ public:
 	/** Path to the root of the Git repository: can be the ProjectDir itself, or any parent directory (found by the "Connect" operation) */
 	FString PathToRepositoryRoot;
 
+	/** Tell if using the Git LFS file Locking workflow */
+	bool bUsingGitLfsLocking;
+
 	/** Operation we want to perform - contains outward-facing parameters & results */
 	TSharedRef<class ISourceControlOperation, ESPMode::ThreadSafe> Operation;
 
@@ -60,6 +66,15 @@ public:
 	/**If true, the source control command succeeded*/
 	bool bCommandSuccessful;
 
+	/** TODO LFS If true, the source control connection was dropped while this command was being executed*/
+	bool bConnectionDropped;
+
+	/** Current Commit full SHA1 */
+	FString CommitId;
+
+	/** Current Commit description's Summary */
+	FString CommitSummary;
+
 	/** If true, this command will be automatically cleaned up in Tick() */
 	bool bAutoDelete;
 
@@ -67,11 +82,11 @@ public:
 	EConcurrency::Type Concurrency;
 
 	/** Files to perform this operation on */
-	TArray< FString > Files;
+	TArray<FString> Files;
 
-	/**Info and/or warning message message storage*/
-	TArray< FString > InfoMessages;
+	/**Info and/or warning message storage*/
+	TArray<FString> InfoMessages;
 
 	/**Potential error message storage*/
-	TArray< FString > ErrorMessages;
+	TArray<FString> ErrorMessages;
 };
