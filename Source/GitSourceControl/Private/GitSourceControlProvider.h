@@ -1,4 +1,7 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+// Copyright (c) 2014-2020 Sebastien Rombauts (sebastien.rombauts@gmail.com)
+//
+// Distributed under the MIT License (MIT) (See accompanying file LICENSE.txt
+// or copy at http://opensource.org/licenses/MIT)
 
 #pragma once
 
@@ -8,15 +11,24 @@
 #include "ISourceControlProvider.h"
 #include "IGitSourceControlWorker.h"
 #include "GitSourceControlState.h"
+#include "GitSourceControlMenu.h"
 
 class FGitSourceControlCommand;
 
 DECLARE_DELEGATE_RetVal(FGitSourceControlWorkerRef, FGetGitSourceControlWorker)
 
+/// Git version and capabilites extracted from the string "git version 2.11.0.windows.3"
 struct FGitVersion
 {
-	int Major;
-	int Minor;
+	// Git version extracted from the string "git version 2.11.0.windows.3" (Windows), "git version 2.11.0" (Linux/Mac/Cygwin/WSL) or "git version 2.31.1.vfs.0.3" (Microsoft)
+	int Major;   // 2	Major version number
+	int Minor;   // 31	Minor version number
+	int Patch;   // 1	Patch/bugfix number
+	bool bIsFork;
+	FString Fork; // "vfs"
+	int ForkMajor; // 0	Fork specific revision number
+	int ForkMinor; // 3 
+	int ForkPatch; // ?
 
 	uint32 bHasCatFileWithFilters : 1;
 	uint32 bHasGitLfs : 1;
@@ -25,6 +37,11 @@ struct FGitVersion
 	FGitVersion() 
 		: Major(0)
 		, Minor(0)
+		, Patch(0)
+		, bIsFork(false)
+		, ForkMajor(0)
+		, ForkMinor(0)
+		, ForkPatch(0)
 		, bHasCatFileWithFilters(false)
 		, bHasGitLfs(false)
 		, bHasGitLfsLocking(false)
@@ -54,9 +71,9 @@ public:
 	virtual bool IsEnabled() const override;
 	virtual bool IsAvailable() const override;
 	virtual const FName& GetName(void) const override;
-	virtual bool QueryStateBranchConfig(const FString& ConfigSrc, const FString& ConfigDest) override { return false;  }
-	virtual void RegisterStateBranches(const TArray<FString>& BranchNames, const FString& ContentRoot) override {}
-	virtual int32 GetStateBranchIndex(const FString& InBranchName) const override { return INDEX_NONE; }
+	virtual bool QueryStateBranchConfig(const FString& ConfigSrc, const FString& ConfigDest) override;
+	virtual void RegisterStateBranches(const TArray<FString>& BranchNames, const FString& ContentRootIn) override;
+	virtual int32 GetStateBranchIndex(const FString& BranchName) const override;
 	virtual ECommandResult::Type GetState( const TArray<FString>& InFiles, TArray< TSharedRef<ISourceControlState, ESPMode::ThreadSafe> >& OutState, EStateCacheUsage::Type InStateCacheUsage ) override;
 	virtual TArray<FSourceControlStateRef> GetCachedStateByPredicate(TFunctionRef<bool(const FSourceControlStateRef&)> Predicate) const override;
 	virtual FDelegateHandle RegisterSourceControlStateChanged_Handle(const FSourceControlStateChanged::FDelegate& SourceControlStateChanged) override;
@@ -78,6 +95,9 @@ public:
 	 */
 	void CheckGitAvailability();
 
+	/** Refresh Git settings from source control settings */
+	void UpdateSettings();
+
 	/**
 	 * Find the .git/ repository and check it's status.
 	 */
@@ -90,7 +110,7 @@ public:
 	}
 
 	/** Git version for feature checking */
-	inline const FGitVersion& GetGitVersion()
+	inline const FGitVersion& GetGitVersion() const
 	{
 		return GitVersion;
 	}
@@ -99,6 +119,12 @@ public:
 	inline const FString& GetPathToRepositoryRoot() const
 	{
 		return PathToRepositoryRoot;
+	}
+
+	/** Gets the path to the Git binary */
+	inline const FString& GetGitBinaryPath() const
+	{
+		return PathToGitBinary;
 	}
 
 	/** Git config user.name */
@@ -119,6 +145,11 @@ public:
 		return RemoteUrl;
 	}
 
+	inline const FString& GetLockUser() const
+	{
+		return LockUser;
+	}
+
 	/** Helper function used to update state cache */
 	TSharedRef<FGitSourceControlState, ESPMode::ThreadSafe> GetStateInternal(const FString& Filename);
 
@@ -128,27 +159,73 @@ public:
 	 */
 	void RegisterWorker( const FName& InName, const FGetGitSourceControlWorker& InDelegate );
 
+	/** Set list of error messages that occurred after last perforce command */
+	void SetLastErrors(const TArray<FText>& InErrors);
+
+	/** Get list of error messages that occurred after last perforce command */
+	TArray<FText> GetLastErrors() const;
+
+	/** Get number of error messages seen after running last perforce command */
+	int32 GetNumLastErrors() const;
+
 	/** Remove a named file from the state cache */
 	bool RemoveFileFromCache(const FString& Filename);
 
-private:
+	/** Get files in cache */
+	TArray<FString> GetFilesInCache();
 
+	bool AddFileToIgnoreForceCache(const FString& Filename);
+
+	bool RemoveFileFromIgnoreForceCache(const FString& Filename);
+
+	const FString& GetBranchName() const
+	{
+		return BranchName;
+	}
+
+	const FString& GetRemoteBranchName() const { return RemoteBranchName; }
+
+	const TArray<FString>& GetStatusBranchNames() const
+	{
+		return StatusBranchNames;
+	}
+
+	/** Indicates editor binaries are to be updated upon next sync */
+	bool bPendingRestart;
+
+private:
 	/** Is git binary found and working. */
 	bool bGitAvailable;
 
 	/** Is git repository found. */
 	bool bGitRepositoryFound;
 
+	/** Is LFS locking enabled? */
+	bool bUsingGitLfsLocking = false;
+
+	FString PathToGitBinary;
+
+	FString LockUser;
+
+	/** Critical section for thread safety of error messages that occurred after last perforce command */
+	mutable FCriticalSection LastErrorsCriticalSection;
+
+	/** List of error messages that occurred after last perforce command */
+	TArray<FText> LastErrors;
+
 	/** Helper function for Execute() */
 	TSharedPtr<class IGitSourceControlWorker, ESPMode::ThreadSafe> CreateWorker(const FName& InOperationName) const;
 
 	/** Helper function for running command synchronously. */
-	ECommandResult::Type ExecuteSynchronousCommand(class FGitSourceControlCommand& InCommand, const FText& Task);
+	ECommandResult::Type ExecuteSynchronousCommand(class FGitSourceControlCommand& InCommand, const FText& Task, bool bSuppressResponseMsg);
 	/** Issue a command asynchronously if possible. */
-	ECommandResult::Type IssueCommand(class FGitSourceControlCommand& InCommand);
+	ECommandResult::Type IssueCommand(class FGitSourceControlCommand& InCommand, const bool bSynchronous = false );
 
 	/** Output any messages this command holds */
 	void OutputCommandMessages(const class FGitSourceControlCommand& InCommand) const;
+
+	/** Update repository status on Connect and UpdateStatus operations */
+	void UpdateRepositoryStatus(const class FGitSourceControlCommand& InCommand);
 
 	/** Path to the root of the Git repository: can be the ProjectDir itself, or any parent directory (found by the "Connect" operation) */
 	FString PathToRepositoryRoot;
@@ -162,8 +239,17 @@ private:
 	/** Name of the current branch */
 	FString BranchName;
 
-	/** URL of the "origin" defaut remote server */
+	/** Name of the current remote branch */
+	FString RemoteBranchName;
+
+	/** URL of the "origin" default remote server */
 	FString RemoteUrl;
+
+	/** Current Commit full SHA1 */
+	FString CommitId;
+
+	/** Current Commit description's Summary */
+	FString CommitSummary;
 
 	/** State cache */
 	TMap<FString, TSharedRef<class FGitSourceControlState, ESPMode::ThreadSafe> > StateCache;
@@ -179,4 +265,18 @@ private:
 
 	/** Git version for feature checking */
 	FGitVersion GitVersion;
+
+	/** Source Control Menu Extension */
+	FGitSourceControlMenu GitSourceControlMenu;
+
+	/**
+		Ignore these files when forcing status updates. We add to this list when we've just updated the status already.
+		UE4's SourceControl has a habit of performing a double status update, immediately after an operation.
+	*/
+	TArray<FString> IgnoreForceCache;
+
+	/** Array of branch names for status queries */
+	TArray<FString> StatusBranchNames;
+
+	class FGitSourceControlRunner* Runner = nullptr;
 };

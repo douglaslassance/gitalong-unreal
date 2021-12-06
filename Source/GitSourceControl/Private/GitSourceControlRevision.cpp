@@ -1,6 +1,10 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+// Copyright (c) 2014-2020 Sebastien Rombauts (sebastien.rombauts@gmail.com)
+//
+// Distributed under the MIT License (MIT) (See accompanying file LICENSE.txt
+// or copy at http://opensource.org/licenses/MIT)
 
 #include "GitSourceControlRevision.h"
+
 #include "HAL/FileManager.h"
 #include "Misc/Paths.h"
 #include "Modules/ModuleManager.h"
@@ -11,9 +15,10 @@
 
 bool FGitSourceControlRevision::Get( FString& InOutFilename ) const
 {
-	FGitSourceControlModule& GitSourceControl = FModuleManager::LoadModuleChecked<FGitSourceControlModule>("GitSourceControl");
-	const FString PathToGitBinary = GitSourceControl.AccessSettings().GetBinaryPath();
-	const FString PathToRepositoryRoot = GitSourceControl.GetProvider().GetPathToRepositoryRoot();
+	const FGitSourceControlModule& GitSourceControl = FGitSourceControlModule::Get();
+	const FGitSourceControlProvider& Provider = GitSourceControl.GetProvider();
+	const FString PathToGitBinary = Provider.GetGitBinaryPath();
+	const FString PathToRepositoryRoot = Provider.GetPathToRepositoryRoot();
 
 	// if a filename for the temp file wasn't supplied generate a unique-ish one
 	if(InOutFilename.Len() == 0)
