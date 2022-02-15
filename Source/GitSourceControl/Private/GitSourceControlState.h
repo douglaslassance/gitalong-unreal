@@ -22,6 +22,7 @@ namespace EWorkingCopyState
 		Conflicted,
 		NotControlled,
 		Ignored,
+		MissingCommit,
 	};
 }
 

@@ -22,6 +22,13 @@ const FString FGitSourceControlSettings::GetBinaryPath() const
 	return BinaryPath;
 }
 
+const FString FGitSourceControlSettings::GetGitarmonyBinaryPath() const
+{
+	FScopeLock ScopeLock(&CriticalSection);
+	return GitarmonyBinaryPath;
+}
+
+
 bool FGitSourceControlSettings::SetBinaryPath(const FString& InString)
 {
 	FScopeLock ScopeLock(&CriticalSection);
@@ -29,6 +36,17 @@ bool FGitSourceControlSettings::SetBinaryPath(const FString& InString)
 	if(bChanged)
 	{
 		BinaryPath = InString;
+	}
+	return bChanged;
+}
+
+bool FGitSourceControlSettings::SetGitarmonyBinaryPath(const FString& InString)
+{
+	FScopeLock ScopeLock(&CriticalSection);
+	const bool bChanged = (BinaryPath != InString);
+	if(bChanged)
+	{
+		GitarmonyBinaryPath = InString;
 	}
 	return bChanged;
 }

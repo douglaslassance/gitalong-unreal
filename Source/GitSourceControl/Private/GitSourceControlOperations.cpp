@@ -27,7 +27,7 @@ bool FGitConnectWorker::Execute(FGitSourceControlCommand& InCommand)
 		TArray<FString> ProjectDirs;
 		ProjectDirs.Add(FPaths::ConvertRelativePathToFull(FPaths::ProjectContentDir()));
 		ProjectDirs.Add(FPaths::ConvertRelativePathToFull(FPaths::ProjectConfigDir()));
-		InCommand.bCommandSuccessful = GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, ProjectDirs, InCommand.ErrorMessages, States);
+		InCommand.bCommandSuccessful = GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToGitarmonyBinary, InCommand.PathToRepositoryRoot, ProjectDirs, InCommand.ErrorMessages, States);
 		if(!InCommand.bCommandSuccessful || InCommand.ErrorMessages.Num() > 0)
 		{
 			StaticCastSharedRef<FConnect>(InCommand.Operation)->SetErrorText(LOCTEXT("NotAGitRepository", "Failed to enable Git source control. You need to initialize the project as a Git repository first."));
@@ -103,7 +103,7 @@ bool FGitCheckInWorker::Execute(FGitSourceControlCommand& InCommand)
 	}
 
 	// now update the status of our files
-	GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
+	GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToGitarmonyBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
 
 	return InCommand.bCommandSuccessful;
 }
@@ -125,7 +125,7 @@ bool FGitMarkForAddWorker::Execute(FGitSourceControlCommand& InCommand)
 	InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("add"), InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), InCommand.Files, InCommand.InfoMessages, InCommand.ErrorMessages);
 
 	// now update the status of our files
-	GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
+	GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
 
 	return InCommand.bCommandSuccessful;
 }
@@ -147,7 +147,7 @@ bool FGitDeleteWorker::Execute(FGitSourceControlCommand& InCommand)
 	InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("rm"), InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), InCommand.Files, InCommand.InfoMessages, InCommand.ErrorMessages);
 
 	// now update the status of our files
-	GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
+	GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
 
 	return InCommand.bCommandSuccessful;
 }
@@ -217,7 +217,7 @@ bool FGitRevertWorker::Execute(FGitSourceControlCommand& InCommand)
 	}
 
 	// now update the status of our files
-	GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
+	GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToGitarmonyBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
 
 	return InCommand.bCommandSuccessful;
 }
@@ -238,12 +238,12 @@ bool FGitSyncWorker::Execute(FGitSourceControlCommand& InCommand)
    // (this cannot work if any local files are modified but not commited)
    {
       TArray<FString> Parameters;
-      Parameters.Add(TEXT("--rebase origin HEAD"));
+      Parameters.Add(TEXT("--rebase --autostash origin HEAD"));
       InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("pull"), InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, Parameters, TArray<FString>(), InCommand.InfoMessages, InCommand.ErrorMessages);
    }
 
    // now update the status of our files
-   GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
+   GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToGitarmonyBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
 
    return InCommand.bCommandSuccessful;
 }
@@ -266,7 +266,7 @@ bool FGitUpdateStatusWorker::Execute(FGitSourceControlCommand& InCommand)
 
 	if(InCommand.Files.Num() > 0)
 	{
-		InCommand.bCommandSuccessful = GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
+		InCommand.bCommandSuccessful = GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToGitarmonyBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
 		GitSourceControlUtils::RemoveRedundantErrors(InCommand, TEXT("' is outside repository"));
 
 		if(Operation->ShouldUpdateHistory())
@@ -294,7 +294,7 @@ bool FGitUpdateStatusWorker::Execute(FGitSourceControlCommand& InCommand)
 		{
 			TArray<FString> Files;
 			Files.Add(FPaths::ConvertRelativePathToFull(FPaths::ProjectDir()));
-			InCommand.bCommandSuccessful = GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, Files, InCommand.ErrorMessages, States);
+			InCommand.bCommandSuccessful = GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToGitarmonyBinary, InCommand.PathToRepositoryRoot, Files, InCommand.ErrorMessages, States);
 		}
 	}
 
@@ -361,7 +361,7 @@ bool FGitResolveWorker::Execute( class FGitSourceControlCommand& InCommand )
 	}
 
 	// now update the status of our files
-	GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
+	GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToGitarmonyBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
 
 	return InCommand.bCommandSuccessful;
 }

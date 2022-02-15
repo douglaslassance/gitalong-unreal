@@ -37,12 +37,30 @@ struct FGitVersion
 	}
 };
 
+struct FGitarmonyVersion
+{
+	int Major;
+	int Minor;
+	
+	FGitarmonyVersion() 
+		: Major(0)
+		, Minor(0)
+	{
+	}
+
+	inline bool IsGreaterOrEqualThan(int InMajor, int InMinor) const
+	{
+		return (Major > InMajor) || (Major == InMajor && (Minor >= InMinor));
+	}
+};
+
 class FGitSourceControlProvider : public ISourceControlProvider
 {
 public:
 	/** Constructor */
 	FGitSourceControlProvider() 
 		: bGitAvailable(false)
+		, bGitarmonyAvailable(false)
 		, bGitRepositoryFound(false)
 	{
 	}
@@ -79,6 +97,11 @@ public:
 	void CheckGitAvailability();
 
 	/**
+	 * Check configuration, else standard paths, and run a Gitarmony "version" command to check the availability of the binary.
+	 */
+	void CheckGitarmonyAvailability();
+	
+	/**
 	 * Find the .git/ repository and check it's status.
 	 */
 	void CheckRepositoryStatus(const FString& InPathToGitBinary);
@@ -87,6 +110,12 @@ public:
 	inline bool IsGitAvailable() const
 	{
 		return bGitAvailable;
+	}
+
+	/** Is git binary found and working. */
+	inline bool IsGitarmonyAvailable() const
+	{
+		return bGitarmonyAvailable;
 	}
 
 	/** Git version for feature checking */
@@ -136,6 +165,9 @@ private:
 	/** Is git binary found and working. */
 	bool bGitAvailable;
 
+	/** Is gitarmony binary found and working. */
+	bool bGitarmonyAvailable;
+	
 	/** Is git repository found. */
 	bool bGitRepositoryFound;
 

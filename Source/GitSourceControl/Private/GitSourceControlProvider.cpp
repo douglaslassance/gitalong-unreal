@@ -18,7 +18,7 @@
 
 #define LOCTEXT_NAMESPACE "GitSourceControl"
 
-static FName ProviderName("Git");
+static FName ProviderName("Gitarmony");
 
 void FGitSourceControlProvider::Init(bool bForceConnection)
 {
@@ -26,6 +26,11 @@ void FGitSourceControlProvider::Init(bool bForceConnection)
 	if(!bGitAvailable)
 	{
 		CheckGitAvailability();
+	}
+
+	if(!bGitarmonyAvailable)
+	{
+		CheckGitarmonyAvailability();
 	}
 
 	// bForceConnection: not used anymore
@@ -51,6 +56,34 @@ void FGitSourceControlProvider::CheckGitAvailability()
 		if(bGitAvailable)
 		{
 			CheckRepositoryStatus(PathToGitBinary);
+		}
+	}
+	else
+	{
+		bGitAvailable = false;
+	}
+}
+
+void FGitSourceControlProvider::CheckGitarmonyAvailability()
+{
+	FGitSourceControlModule& GitSourceControl = FModuleManager::LoadModuleChecked<FGitSourceControlModule>("GitSourceControl");
+	FString PathToGitarmonyBinary = GitSourceControl.AccessSettings().GetGitarmonyBinaryPath();
+	if(PathToGitarmonyBinary.IsEmpty())
+	{
+		// Try to find Git binary, and update settings accordingly
+		PathToGitarmonyBinary = GitSourceControlUtils::FindGitarmonyBinaryPath();
+		if(!PathToGitarmonyBinary.IsEmpty())
+		{
+			GitSourceControl.AccessSettings().SetBinaryPath(PathToGitarmonyBinary);
+		}
+	}
+
+	if(!PathToGitarmonyBinary.IsEmpty())
+	{
+		bGitAvailable = GitSourceControlUtils::CheckGitAvailability(PathToGitarmonyBinary, &GitVersion);
+		if(bGitAvailable)
+		{
+			CheckRepositoryStatus(PathToGitarmonyBinary);
 		}
 	}
 	else

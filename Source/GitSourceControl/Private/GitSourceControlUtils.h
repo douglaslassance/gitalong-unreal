@@ -40,12 +40,26 @@ namespace GitSourceControlUtils
 FString FindGitBinaryPath();
 
 /**
+ * Find the path to the Gitarmony binary, looking into a few places (standalone Gitarmony install, and other common tools embedding Git)
+ * @returns the path to the Gitarmony binary if found, or an empty string.
+ */
+FString FindGitarmonyBinaryPath();
+
+/**
  * Run a Git "version" command to check the availability of the binary.
- * @param InPathToGitBinary		The path to the Git binary
- * @param OutGitVersion         If provided, populate with the git version parsed from "version" command
+ * @param InPathToBinary		The path to the Git binary
+ * @param OutVersion         If provided, populate with the git version parsed from "version" command
  * @returns true if the command succeeded and returned no errors
  */
-bool CheckGitAvailability(const FString& InPathToGitBinary, FGitVersion* OutVersion = nullptr);
+bool CheckGitAvailability(const FString& InPathToBinary, FGitVersion* OutVersion = nullptr);
+
+/**
+ * Run a Gitarmony "version" command to check the availability of the binary.
+ * @param InPathToBinary		The path to the Gitarmony binary
+ * @param OutVersion         If provided, populate with the git version parsed from "version" command
+ * @returns true if the command succeeded and returned no errors
+ */
+bool CheckGitarmonyAvailability(const FString& InPathToBinary, FGitVersion* OutVersion = nullptr);
 
 /**
  * Parse the output from the "version" command into GitMajorVersion and GitMinorVersion.
@@ -132,13 +146,16 @@ bool RunCommit(const FString& InPathToGitBinary, const FString& InRepositoryRoot
 /**
  * Run a Git "status" command and parse it.
  *
- * @param	InPathToGitBinary	The path to the Git binary
- * @param	InRepositoryRoot	The Git repository from where to run the command - usually the Game directory (can be empty)
- * @param	InFiles				The files to be operated on
- * @param	OutErrorMessages	Any errors (from StdErr) as an array per-line
+ * @param	InPathToGitBinary		The path to the Git binary
+ * @param	InPathToGitarmonyBinary	The path to the Git binary
+ * @param	InRepositoryRoot		The Git repository from where to run the command - usually the Game directory (can be empty)
+ * @param	InFiles					The files to be operated on
+ * @param	OutErrorMessages		Any errors (from StdErr) as an array per-line
  * @returns true if the command succeeded and returned no errors
  */
-bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InRepositoryRoot, const TArray<FString>& InFiles, TArray<FString>& OutErrorMessages, TArray<FGitSourceControlState>& OutStates);
+bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InPathToGitarmonyBinary, const FString& InRepositoryRoot, const TArray<FString>& InFiles, TArray<FString>& OutErrorMessages, TArray<FGitSourceControlState>& OutStates);
+
+void RunGitarmonySync(const FString& InRepositoryRoot);
 
 /**
  * Run a Git "cat-file" command to dump the binary content of a revision into a file.

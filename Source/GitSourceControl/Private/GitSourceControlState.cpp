@@ -74,6 +74,8 @@ FName FGitSourceControlState::GetIconName() const
 		return FName("Subversion.NotAtHeadRevision");
 	case EWorkingCopyState::NotControlled:
 		return FName("Subversion.NotInDepot");
+	case EWorkingCopyState::MissingCommit:
+		return FName("Subversion.ModifiedOtherBranch");
 	case EWorkingCopyState::Unknown:
 	case EWorkingCopyState::Unchanged: // Unchanged is the same as "Pristine" (not checked out) for Perforce, ie no icon
 	case EWorkingCopyState::Ignored:
@@ -102,6 +104,8 @@ FName FGitSourceControlState::GetSmallIconName() const
 		return FName("Subversion.NotAtHeadRevision_Small");
 	case EWorkingCopyState::NotControlled:
 		return FName("Subversion.NotInDepot_Small");
+	case EWorkingCopyState::MissingCommit:
+		return FName("Subversion.ModifiedOtherBranch_Small");
 	case EWorkingCopyState::Unknown:
 	case EWorkingCopyState::Unchanged: // Unchanged is the same as "Pristine" (not checked out) for Perforce, ie no icon
 	case EWorkingCopyState::Ignored:
@@ -138,6 +142,8 @@ FText FGitSourceControlState::GetDisplayName() const
 		return LOCTEXT("NotControlled", "Not Under Source Control");
 	case EWorkingCopyState::Missing:
 		return LOCTEXT("Missing", "Missing");
+	case EWorkingCopyState::MissingCommit:
+		return LOCTEXT("MissingCommit", "Missing Commit");
 	}
 
 	return FText();
@@ -169,6 +175,8 @@ FText FGitSourceControlState::GetDisplayTooltip() const
 		return LOCTEXT("NotControlled_Tooltip", "Item is not under version control.");
 	case EWorkingCopyState::Missing:
 		return LOCTEXT("Missing_Tooltip", "Item is missing (e.g., you moved or deleted it without using Git). This also indicates that a directory is incomplete (a checkout or update was interrupted).");
+	case EWorkingCopyState::MissingCommit:
+		return LOCTEXT("MissingCommit_Tooltip", "Item is missing one or more commits");
 	}
 
 	return FText();
@@ -196,7 +204,7 @@ bool FGitSourceControlState::CanCheckIn() const
 
 bool FGitSourceControlState::CanCheckout() const
 {
-	return false; // With Git all tracked files in the working copy are always already checked-out (as opposed to Perforce)
+	return IsCurrent();
 }
 
 bool FGitSourceControlState::IsCheckedOut() const
@@ -206,12 +214,12 @@ bool FGitSourceControlState::IsCheckedOut() const
 
 bool FGitSourceControlState::IsCheckedOutOther(FString* Who) const
 {
-	return false; // Git does not lock checked-out files as Perforce does
+	return !IsCurrent();
 }
 
 bool FGitSourceControlState::IsCurrent() const
 {
-	return true; // @todo check the state of the HEAD versus the state of tracked branch on remote
+	return WorkingCopyState != EWorkingCopyState::MissingCommit;
 }
 
 bool FGitSourceControlState::IsSourceControlled() const
@@ -236,12 +244,12 @@ bool FGitSourceControlState::IsIgnored() const
 
 bool FGitSourceControlState::CanEdit() const
 {
-	return true; // With Git all files in the working copy are always editable (as opposed to Perforce)
+	return IsCurrent();
 }
 
 bool FGitSourceControlState::CanDelete() const
 {
-	return IsSourceControlled() && IsCurrent();
+	return IsCurrent();
 }
 
 bool FGitSourceControlState::IsUnknown() const
