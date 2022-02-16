@@ -33,6 +33,9 @@ public:
 		: LocalFilename(InLocalFilename)
 		, WorkingCopyState(EWorkingCopyState::Unknown)
 		, TimeStamp(0)
+		, bIsMissingCommitOnRemote(false)
+		, MissingCommitSha("")
+		, MissingCommitAuthor("")
 	{
 	}
 
@@ -86,4 +89,13 @@ public:
 
 	/** The timestamp of the last update */
 	FDateTime TimeStamp;
+
+	/** This is only useful to Gitarmony statuses. If the missing commit is on remote branches. */
+	bool bIsMissingCommitOnRemote;
+	
+	/** This is only useful to Gitarmony statuses. Sha of the first missing commit found for this file. */
+	FString MissingCommitSha;
+
+	/** This is only useful to Gitarmony statuses. Author of the first missing commit found for this file. */
+	FString MissingCommitAuthor;
 };

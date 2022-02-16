@@ -135,15 +135,17 @@ FText FGitSourceControlState::GetDisplayName() const
 	case EWorkingCopyState::Copied:
 		return LOCTEXT("Copied", "Copied");
 	case EWorkingCopyState::Conflicted:
-		return LOCTEXT("ContentsConflict", "Contents Conflict");
+		return LOCTEXT("ContentsConflict", "Contents conflict");
 	case EWorkingCopyState::Ignored:
 		return LOCTEXT("Ignored", "Ignored");
 	case EWorkingCopyState::NotControlled:
-		return LOCTEXT("NotControlled", "Not Under Source Control");
+		return LOCTEXT("NotControlled", "Not under Source control");
 	case EWorkingCopyState::Missing:
 		return LOCTEXT("Missing", "Missing");
 	case EWorkingCopyState::MissingCommit:
-		return LOCTEXT("MissingCommit", "Missing Commit");
+		const FText Scope = bIsMissingCommitOnRemote ? FText::FromString("local ") : FText::FromString("");
+		const FText Message = MissingCommitSha.IsEmpty() ? FString("uncomitted changes") : FText::Format(FText::FromString("{0}commit {1}"), Scope, MissingCommitSha);
+		return FText::Format(LOCTEXT("MissingCommit", "Missing {0} from {1}"), Message, MissingCommitAuthor);
 	}
 
 	return FText();
@@ -176,7 +178,9 @@ FText FGitSourceControlState::GetDisplayTooltip() const
 	case EWorkingCopyState::Missing:
 		return LOCTEXT("Missing_Tooltip", "Item is missing (e.g., you moved or deleted it without using Git). This also indicates that a directory is incomplete (a checkout or update was interrupted).");
 	case EWorkingCopyState::MissingCommit:
-		return LOCTEXT("MissingCommit_Tooltip", "Item is missing one or more commits");
+		const FText Scope = bIsMissingCommitOnRemote ? FText::FromString("local ") : FText::FromString("");
+		const FText Message = MissingCommitSha.IsEmpty() ? FString("uncomitted changes") : FText::Format(FText::FromString("{0}commit {1}"), Scope, MissingCommitSha);
+		return FText::Format(LOCTEXT("MissingCommit_Tooltip", "Missing {0} from {1}"), Message, MissingCommitAuthor);
 	}
 
 	return FText();

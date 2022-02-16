@@ -155,8 +155,6 @@ bool RunCommit(const FString& InPathToGitBinary, const FString& InRepositoryRoot
  */
 bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InPathToGitarmonyBinary, const FString& InRepositoryRoot, const TArray<FString>& InFiles, TArray<FString>& OutErrorMessages, TArray<FGitSourceControlState>& OutStates);
 
-void RunGitarmonySync(const FString& InRepositoryRoot);
-
 /**
  * Run a Git "cat-file" command to dump the binary content of a revision into a file.
  *

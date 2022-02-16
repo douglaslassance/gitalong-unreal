@@ -868,16 +868,31 @@ public:
 	FGitarmonyStatusParser(const FString& InResult)
 	{
 		TArray<FString> Splits;
+		// TODO: This space split parsing won't support filenames with spaces.
 		InResult.ParseIntoArray(Splits, TEXT(" "));
-		if (Splits.Num() > 1)
-		{
+		if (Splits.Num() >= 4)
+		{	
 			State = EWorkingCopyState::MissingCommit;
+			Splits.RemoveAt(0);
+			bIsMissingCommitOnRemote = Splits[0].Equals("R");
+			Splits.RemoveAt(0);
+			if (Splits[0] != 0)
+			{
+				MissingCommitSha = Splits[0];
+			}
+			Splits.RemoveAt(0);
+			// The remainder of the splits are the author.
+			// TODO: Probably there is a better ways to get the right slice of the splits than removing the first item each time we use it.
+			MissingCommitAuthor = FString::Join(Splits, TEXT(" "));
 		} else
 		{
-			State = EWorkingCopyState::Unchanged;
+			State = EWorkingCopyState::Unknown;
 		}
 	}
 	EWorkingCopyState::Type State;
+	bool bIsMissingCommitOnRemote;
+	FString MissingCommitSha;
+	FString MissingCommitAuthor;
 };
 
 /**
@@ -972,6 +987,9 @@ static void ParseFileStatusResult(const FString& InPathToGitBinary, const FStrin
 			// File found in status results; only the case for "changed" files
 			const FGitarmonyStatusParser StatusParser(InResults[IdxGitarmonyResult]);
 			FileState.WorkingCopyState = StatusParser.State;
+			FileState.bMissingCommitOnRemote = StatusParser.bMissingCommitOnRemote;
+			FileState.MissingCommitSha = StatusParser.MissingCommitSha;
+			FileState.MissingCommitAuthor = StatusParser.MissingCommitAuthor;
 		}
 
 		if (!FileState.IsCheckedOutOther())
@@ -1130,15 +1148,7 @@ bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InPathToGi
 			ParseStatusResults(InPathToGitBinary, InPathToGitarmonyBinary, InRepositoryRoot, Files.Value, Results, GitarmonyResults, OutStates);
 		}
 	}
-
-	RunGitarmonySync(InRepositoryRoot);
-	
 	return bResults;
-}
-
-void RunGitarmonySync(const FString& InRepositoryRoot)
-{
-	UE_LOG(LogTemp, Warning, TEXT("RUNNING GITARMONY SYNC"));
 }
 
 // Run a Git `cat-file --filters` command to dump the binary content of a revision into a file.
