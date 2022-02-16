@@ -4,16 +4,19 @@
 
 #include "CoreMinimal.h"
 #include "ISourceControlProvider.h"
+#include "PerforceConnectionInfo.h"
 #include "Misc/IQueuedWork.h"
 
+DECLARE_DELEGATE_RetVal(bool, FOnIsCancelled);
+
 /**
- * Used to execute Git commands multi-threaded.
+ * Used to execute Perforce commands multi-threaded.
  */
-class FGitSourceControlCommand : public IQueuedWork
+class FPerforceSourceControlCommand : public IQueuedWork
 {
 public:
 
-	FGitSourceControlCommand(const TSharedRef<class ISourceControlOperation, ESPMode::ThreadSafe>& InOperation, const TSharedRef<class IGitSourceControlWorker, ESPMode::ThreadSafe>& InWorker, const FSourceControlOperationComplete& InOperationCompleteDelegate = FSourceControlOperationComplete() );
+	FPerforceSourceControlCommand(const TSharedRef<class ISourceControlOperation, ESPMode::ThreadSafe>& InOperation, const TSharedRef<class IPerforceSourceControlWorker, ESPMode::ThreadSafe>& InWorker, const FSourceControlOperationComplete& InOperationCompleteDelegate = FSourceControlOperationComplete() );
 
 	/**
 	 * This is where the real thread work is done. All work that is done for
@@ -35,21 +38,36 @@ public:
 	 */
 	virtual void DoThreadedWork() override;
 
+	/** Attempt to cancel the operation */
+	void Cancel();
+
+	/** Mark the connection to the server as successful */
+	void MarkConnectionAsSuccessful();
+
+	/** Mark as canceled while trying to connect */
+	void CancelWhileTryingToConnect();
+
+	/** Is the operation canceled? */
+	bool IsCanceled() const;
+
+	/** Was the connection to the server successful? */
+	bool WasConnectionSuccessful() const;
+
+	/** Was the operation canceled while trying to connect? */
+	bool WasCanceledWhileTryingToConnect() const;
+
 	/** Save any results and call any registered callbacks. */
 	ECommandResult::Type ReturnResults();
 
 public:
-	/** Path to the Git binary */
-	FString PathToGitBinary;
-
-	/** Path to the root of the Git repository: can be the ProjectDir itself, or any parent directory (found by the "Connect" operation) */
-	FString PathToRepositoryRoot;
+	/** Connection parameters, reproduced here because if is not safe to access the provider's settings from another thread */
+	FPerforceConnectionInfo ConnectionInfo;
 
 	/** Operation we want to perform - contains outward-facing parameters & results */
 	TSharedRef<class ISourceControlOperation, ESPMode::ThreadSafe> Operation;
 
 	/** The object that will actually do the work */
-	TSharedRef<class IGitSourceControlWorker, ESPMode::ThreadSafe> Worker;
+	TSharedRef<class IPerforceSourceControlWorker, ESPMode::ThreadSafe> Worker;
 
 	/** Delegate to notify when this operation completes */
 	FSourceControlOperationComplete OperationCompleteDelegate;
@@ -57,8 +75,20 @@ public:
 	/**If true, this command has been processed by the source control thread*/
 	volatile int32 bExecuteProcessed;
 
+	/**If true, this command has been cancelled*/
+	volatile int32 bCancelled;
+
+	/**If true, the source control connection was made successfully */
+	volatile int32 bConnectionWasSuccessful;
+
+	/**If true, this command was cancelled while trying to connect */
+	volatile int32 bCancelledWhileTryingToConnect;
+
 	/**If true, the source control command succeeded*/
 	bool bCommandSuccessful;
+
+	/**If true, the source control connection was dropped while this command was being executed*/
+	bool bConnectionDropped;
 
 	/** If true, this command will be automatically cleaned up in Tick() */
 	bool bAutoDelete;
@@ -69,9 +99,13 @@ public:
 	/** Files to perform this operation on */
 	TArray< FString > Files;
 
-	/**Info and/or warning message message storage*/
-	TArray< FString > InfoMessages;
+	/** Potential error, warning and info message storage */
+	FSourceControlResultInfo ResultInfo;
 
-	/**Potential error message storage*/
-	TArray< FString > ErrorMessages;
+	/** Branch names for status queries */
+	TArray< FString > StatusBranchNames;
+
+	/** Content root for branch mapping */
+	FString ContentRoot;
+
 };

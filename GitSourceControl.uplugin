@@ -1,24 +1,24 @@
 {
 	"FileVersion" : 3,
-	"Version" : 14,
-	"VersionName" : "1.4",
-	"FriendlyName" : "Git",
-	"Description" : "Git source control management",
+	"Version" : 1,
+	"VersionName" : "1.0",
+	"FriendlyName" : "Perforce",
+	"Description" : "Perforce source control management",
 	"Category" : "Source Control",
-	"CreatedBy" : "SRombauts and Epic Games, Inc.",
+	"CreatedBy" : "Epic Games, Inc.",
 	"CreatedByURL" : "http://epicgames.com",
 	"DocsURL" : "",
 	"MarketplaceURL" : "",
 	"SupportURL" : "",
 	"EnabledByDefault" : true,
 	"CanContainContent" : false,
-	"IsBetaVersion" : true,
+	"IsBetaVersion" : false,
 	"Installed" : false,
 	"Modules" :
 	[
 		{
-			"Name" : "GitSourceControl",
-			"Type" : "Editor",
+			"Name" : "PerforceSourceControl",
+			"Type" : "UncookedOnly",
 			"LoadingPhase" : "Default"
 		}
 	]

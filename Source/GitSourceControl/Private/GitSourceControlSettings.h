@@ -3,15 +3,39 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "PerforceConnectionInfo.h"
 
-class FGitSourceControlSettings
+class FPerforceSourceControlSettings
 {
 public:
-	/** Get the Git Binary Path */
-	const FString GetBinaryPath() const;
+	/** Get the Perforce port */
+	const FString& GetPort() const;
 
-	/** Set the Git Binary Path */
-	bool SetBinaryPath(const FString& InString);
+	/** Set the Perforce port */
+	void SetPort(const FString& InString);
+
+	/** Get the Perforce username */
+	const FString& GetUserName() const;
+
+	/** Set the Perforce username */
+	void SetUserName(const FString& InString);
+
+	/** Get the Perforce workspace */
+	const FString& GetWorkspace() const;
+
+	/** Set the Perforce workspace */
+	void SetWorkspace(const FString& InString);
+
+	/** Get the Perforce host override */
+	const FString& GetHostOverride() const;
+
+	/** Set the Perforce host override */
+	void SetHostOverride(const FString& InString);
+
+	/** Get the perforce cl we should use for this run (useful in commandlets) returns empty string if there is no cl*/
+	const FString& GetChangelistNumber() const;
+
+	void SetChangelistNumber(const FString& InString);
 
 	/** Load settings from ini file */
 	void LoadSettings();
@@ -19,10 +43,13 @@ public:
 	/** Save settings to ini file */
 	void SaveSettings() const;
 
+	/** Get the credentials we use to access the server - only call on the game thread */
+	FPerforceConnectionInfo GetConnectionInfo() const;
+
 private:
 	/** A critical section for settings access */
 	mutable FCriticalSection CriticalSection;
 
-	/** Git binary path */
-	FString BinaryPath;
+	/** The credentials we use to access the server */
+	FPerforceConnectionInfo ConnectionInfo;
 };

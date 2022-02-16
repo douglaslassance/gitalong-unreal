@@ -2,27 +2,29 @@
 
 using UnrealBuildTool;
 
-public class GitSourceControl : ModuleRules
+public class PerforceSourceControl : ModuleRules
 {
-	public GitSourceControl(ReadOnlyTargetRules Target) : base(Target)
+	public PerforceSourceControl(ReadOnlyTargetRules Target) : base(Target)
 	{
-		PrivateDependencyModuleNames.AddRange(
-			new string[] {
+        PrivateDependencyModuleNames.AddRange(
+            new string[] {
 				"Core",
+				"CoreUObject",
+                "InputCore",
 				"Slate",
 				"SlateCore",
-				"InputCore",
-				"DesktopWidgets",
-				"EditorStyle",
+                "EditorStyle",
 				"SourceControl",
 			}
 		);
 
-		if (Target.bBuildEditor == true)
+		AddEngineThirdPartyPrivateStaticDependencies(Target, "Perforce");
+		PublicDefinitions.Add("USE_P4_API=1");
+
+		if (Target.Platform == UnrealTargetPlatform.Win64 || Target.Platform == UnrealTargetPlatform.Mac)
 		{
-			// needed to enable/disable this via experimental settings
-			PrivateDependencyModuleNames.Add("CoreUObject");
-			PrivateDependencyModuleNames.Add("UnrealEd");
+			AddEngineThirdPartyPrivateStaticDependencies(Target, "OpenSSL");
+            AddEngineThirdPartyPrivateStaticDependencies(Target, "zlib");
 		}
 	}
 }

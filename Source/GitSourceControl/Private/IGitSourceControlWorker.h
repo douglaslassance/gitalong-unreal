@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 
-class IGitSourceControlWorker
+class IPerforceSourceControlWorker
 {
 public:
 	/**
@@ -15,7 +15,7 @@ public:
 	/**
 	 * Function that actually does the work. Can be executed on another thread.
 	 */
-	virtual bool Execute( class FGitSourceControlCommand& InCommand ) = 0;
+	virtual bool Execute( class FPerforceSourceControlCommand& InCommand ) = 0;
 
 	/**
 	 * Updates the state of any items after completion (if necessary). This is always executed on the main thread.
@@ -24,4 +24,4 @@ public:
 	virtual bool UpdateStates() const = 0;
 };
 
-typedef TSharedRef<IGitSourceControlWorker, ESPMode::ThreadSafe> FGitSourceControlWorkerRef;
+typedef TSharedRef<IPerforceSourceControlWorker, ESPMode::ThreadSafe> FPerforceSourceControlWorkerRef;

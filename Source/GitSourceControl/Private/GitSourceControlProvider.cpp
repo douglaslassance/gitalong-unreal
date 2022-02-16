@@ -1,105 +1,55 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
-#include "GitSourceControlProvider.h"
+#include "PerforceSourceControlProvider.h"
+#include "PerforceSourceControlPrivate.h"
 #include "HAL/PlatformProcess.h"
-#include "Misc/Paths.h"
+#include "Misc/MessageDialog.h"
+#include "Misc/CommandLine.h"
 #include "Misc/QueuedThreadPool.h"
 #include "Modules/ModuleManager.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
-#include "GitSourceControlCommand.h"
 #include "ISourceControlModule.h"
-#include "SourceControlHelpers.h"
-#include "GitSourceControlModule.h"
-#include "GitSourceControlUtils.h"
-#include "SGitSourceControlSettings.h"
-#include "SourceControlOperations.h"
+#include "PerforceConnectionInfo.h"
+#include "PerforceSourceControlCommand.h"
+#include "ISourceControlLabel.h"
+#include "PerforceSourceControlLabel.h"
+#include "PerforceConnection.h"
+#include "PerforceSourceControlModule.h"
+#include "SPerforceSourceControlSettings.h"
 #include "Logging/MessageLog.h"
 #include "ScopedSourceControlProgress.h"
+#include "SourceControlHelpers.h"
+#include "SourceControlOperations.h"
 
-#define LOCTEXT_NAMESPACE "GitSourceControl"
+static FName ProviderName("Perforce");
 
-static FName ProviderName("Git");
+#define LOCTEXT_NAMESPACE "PerforceSourceControl"
 
-void FGitSourceControlProvider::Init(bool bForceConnection)
+/** Init of connection with source control server */
+void FPerforceSourceControlProvider::Init(bool bForceConnection)
 {
-	// Init() is called multiple times at startup: do not check git each time
-	if(!bGitAvailable)
-	{
-		CheckGitAvailability();
-	}
-
-	// bForceConnection: not used anymore
+	ParseCommandLineSettings(bForceConnection);
 }
 
-void FGitSourceControlProvider::CheckGitAvailability()
+/** API Specific close the connection with source control server*/
+void FPerforceSourceControlProvider::Close()
 {
-	FGitSourceControlModule& GitSourceControl = FModuleManager::LoadModuleChecked<FGitSourceControlModule>("GitSourceControl");
-	FString PathToGitBinary = GitSourceControl.AccessSettings().GetBinaryPath();
-	if(PathToGitBinary.IsEmpty())
+	if ( PersistentConnection )
 	{
-		// Try to find Git binary, and update settings accordingly
-		PathToGitBinary = GitSourceControlUtils::FindGitBinaryPath();
-		if(!PathToGitBinary.IsEmpty())
-		{
-			GitSourceControl.AccessSettings().SetBinaryPath(PathToGitBinary);
-		}
+		PersistentConnection->Disconnect();
+		delete PersistentConnection;
+		PersistentConnection = NULL;
 	}
 
-	if(!PathToGitBinary.IsEmpty())
-	{
-		bGitAvailable = GitSourceControlUtils::CheckGitAvailability(PathToGitBinary, &GitVersion);
-		if(bGitAvailable)
-		{
-			CheckRepositoryStatus(PathToGitBinary);
-		}
-	}
-	else
-	{
-		bGitAvailable = false;
-	}
-}
-
-void FGitSourceControlProvider::CheckRepositoryStatus(const FString& InPathToGitBinary)
-{
-	// Find the path to the root Git directory (if any)
-	const FString PathToProjectDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir());
-	bGitRepositoryFound = GitSourceControlUtils::FindRootDirectory(PathToProjectDir, PathToRepositoryRoot);
-	if(bGitRepositoryFound)
-	{
-		// Get branch name
-		bGitRepositoryFound = GitSourceControlUtils::GetBranchName(InPathToGitBinary, PathToRepositoryRoot, BranchName);
-		if(bGitRepositoryFound)
-		{
-			GitSourceControlUtils::GetRemoteUrl(InPathToGitBinary, PathToRepositoryRoot, RemoteUrl);
-		}
-		else
-		{
-			UE_LOG(LogSourceControl, Error, TEXT("'%s' is not a valid Git repository"), *PathToRepositoryRoot);
-		}
-	}
-	else
-	{
-		UE_LOG(LogSourceControl, Warning, TEXT("'%s' is not part of a Git repository"), *FPaths::ProjectDir());
-	}
-
-	// Get user name & email (of the repository, else from the global Git config)
-	GitSourceControlUtils::GetUserConfig(InPathToGitBinary, PathToRepositoryRoot, UserName, UserEmail);
-}
-
-void FGitSourceControlProvider::Close()
-{
 	// clear the cache
 	StateCache.Empty();
 
-	bGitAvailable = false;
-	bGitRepositoryFound = false;
-	UserName.Empty();
-	UserEmail.Empty();
+	bServerAvailable = false;
 }
 
-TSharedRef<FGitSourceControlState, ESPMode::ThreadSafe> FGitSourceControlProvider::GetStateInternal(const FString& Filename)
+TSharedRef<FPerforceSourceControlState, ESPMode::ThreadSafe> FPerforceSourceControlProvider::GetStateInternal(const FString& Filename)
 {
-	TSharedRef<FGitSourceControlState, ESPMode::ThreadSafe>* State = StateCache.Find(Filename);
+	TSharedRef<FPerforceSourceControlState, ESPMode::ThreadSafe>* State = StateCache.Find(Filename);
 	if(State != NULL)
 	{
 		// found cached item
@@ -108,42 +58,180 @@ TSharedRef<FGitSourceControlState, ESPMode::ThreadSafe> FGitSourceControlProvide
 	else
 	{
 		// cache an unknown state for this item
-		TSharedRef<FGitSourceControlState, ESPMode::ThreadSafe> NewState = MakeShareable( new FGitSourceControlState(Filename) );
+		TSharedRef<FPerforceSourceControlState, ESPMode::ThreadSafe> NewState = MakeShareable( new FPerforceSourceControlState(Filename) );
 		StateCache.Add(Filename, NewState);
 		return NewState;
 	}
 }
 
-FText FGitSourceControlProvider::GetStatusText() const
+FText FPerforceSourceControlProvider::GetStatusText() const
 {
+	FPerforceSourceControlModule& PerforceSourceControl = FModuleManager::LoadModuleChecked<FPerforceSourceControlModule>( "PerforceSourceControl" );
+	const FPerforceSourceControlSettings& Settings = PerforceSourceControl.AccessSettings();
+
 	FFormatNamedArguments Args;
-	Args.Add( TEXT("RepositoryName"), FText::FromString(PathToRepositoryRoot) );
-	Args.Add( TEXT("RemoteUrl"), FText::FromString(RemoteUrl) );
-	Args.Add( TEXT("BranchName"), FText::FromString(BranchName) );
-	Args.Add( TEXT("UserName"), FText::FromString(UserName) );
-	Args.Add( TEXT("UserEmail"), FText::FromString(UserEmail) );
+	Args.Add( TEXT("IsEnabled"), IsEnabled() ? LOCTEXT("Yes", "Yes") : LOCTEXT("No", "No") );
+	Args.Add( TEXT("IsConnected"), (IsEnabled() && IsAvailable()) ? LOCTEXT("Yes", "Yes") : LOCTEXT("No", "No") );
+	Args.Add( TEXT("PortNumber"), FText::FromString( Settings.GetPort() ) );
+	Args.Add( TEXT("UserName"), FText::FromString( Settings.GetUserName() ) );
+	Args.Add( TEXT("ClientSpecName"), FText::FromString( Settings.GetWorkspace() ) );
 
-	return FText::Format( NSLOCTEXT("Status", "Provider: Git\nEnabledLabel", "Local repository: {RepositoryName}\nRemote origin: {RemoteUrl}\nBranch: {BranchName}\nUser: {UserName}\nE-mail: {UserEmail}"), Args );
+	FText FormattedError;
+	TArray<FText> RecentErrors = GetLastErrors();
+	if (RecentErrors.Num() > 0)
+	{
+		FFormatNamedArguments ErrorArgs;
+		ErrorArgs.Add( TEXT("ErrorText"), RecentErrors[0] );
+
+		FormattedError = FText::Format( LOCTEXT("PerforceErrorStatusText", "Error: {ErrorText}\n\n"), ErrorArgs );
+	}
+
+	Args.Add( TEXT("ErrorText"), FormattedError);
+
+	return FText::Format( LOCTEXT("PerforceStatusText", "{ErrorText}Enabled: {IsEnabled}\nConnected: {IsConnected}\n\nPort: {PortNumber}\nUser name: {UserName}\nClient name: {ClientSpecName}"), Args );
 }
 
-/** Quick check if source control is enabled */
-bool FGitSourceControlProvider::IsEnabled() const
+bool FPerforceSourceControlProvider::IsEnabled() const
 {
-	return bGitRepositoryFound;
+	return true;
 }
 
-/** Quick check if source control is available for use (useful for server-based providers) */
-bool FGitSourceControlProvider::IsAvailable() const
+bool FPerforceSourceControlProvider::IsAvailable() const
 {
-	return bGitRepositoryFound;
+	return bServerAvailable && !IsLoginError();
 }
 
-const FName& FGitSourceControlProvider::GetName(void) const
+bool FPerforceSourceControlProvider::EstablishPersistentConnection()
+{
+	FPerforceSourceControlModule& PerforceSourceControl = FModuleManager::LoadModuleChecked<FPerforceSourceControlModule>( "PerforceSourceControl" );
+	FPerforceConnectionInfo ConnectionInfo = PerforceSourceControl.AccessSettings().GetConnectionInfo();
+
+	bool bIsValidConnection = false;
+	if ( !PersistentConnection )
+	{
+		PersistentConnection = new FPerforceConnection(ConnectionInfo);
+	}
+
+	bIsValidConnection = PersistentConnection->IsValidConnection();
+	if ( !bIsValidConnection )
+	{
+		delete PersistentConnection;
+		PersistentConnection = new FPerforceConnection(ConnectionInfo);
+		bIsValidConnection = PersistentConnection->IsValidConnection();
+	}
+
+	bServerAvailable = bIsValidConnection;
+	return bIsValidConnection;
+}
+
+/**
+ * Loads user/SCC information from the command line or INI file.
+ */
+void FPerforceSourceControlProvider::ParseCommandLineSettings(bool bForceConnection)
+{
+	ISourceControlModule& SourceControlModule = FModuleManager::LoadModuleChecked<ISourceControlModule>( "SourceControl" );
+	FPerforceSourceControlModule& PerforceSourceControl = FModuleManager::GetModuleChecked<FPerforceSourceControlModule>( "PerforceSourceControl" );
+
+	bool bFoundCmdLineSettings = false;
+
+	// Check command line for any overridden settings
+	FPerforceSourceControlSettings& P4Settings = PerforceSourceControl.AccessSettings();
+
+	FString PortName = P4Settings.GetPort();
+	FString UserName = P4Settings.GetUserName();
+	FString ClientSpecName = P4Settings.GetWorkspace();
+	FString HostOverrideName = P4Settings.GetHostOverride();
+	FString Changelist = P4Settings.GetChangelistNumber();
+	bFoundCmdLineSettings = FParse::Value(FCommandLine::Get(), TEXT("P4Port="), PortName);
+	bFoundCmdLineSettings |= FParse::Value(FCommandLine::Get(), TEXT("P4User="), UserName);
+	bFoundCmdLineSettings |= FParse::Value(FCommandLine::Get(), TEXT("P4Client="), ClientSpecName);
+	bFoundCmdLineSettings |= FParse::Value(FCommandLine::Get(), TEXT("P4Host="), HostOverrideName);
+	bFoundCmdLineSettings |= FParse::Value(FCommandLine::Get(), TEXT("P4Passwd="), Ticket);
+	bFoundCmdLineSettings |= FParse::Value(FCommandLine::Get(), TEXT("P4Changelist="), Changelist);
+	if(bFoundCmdLineSettings)
+	{
+		P4Settings.SetPort(PortName);
+		P4Settings.SetUserName(UserName);
+		P4Settings.SetWorkspace(ClientSpecName);
+		P4Settings.SetHostOverride(HostOverrideName);
+		P4Settings.SetChangelistNumber(Changelist);
+	}
+
+	if (bForceConnection)
+	{
+		bLoginError = false;
+		FPerforceConnectionInfo ConnectionInfo = P4Settings.GetConnectionInfo();
+		if(FPerforceConnection::EnsureValidConnection(PortName, UserName, ClientSpecName, ConnectionInfo))
+		{
+			P4Settings.SetPort(PortName);
+			P4Settings.SetUserName(UserName);
+			P4Settings.SetWorkspace(ClientSpecName);
+			P4Settings.SetHostOverride(HostOverrideName);
+			bServerAvailable = true;
+		}
+	}
+
+	//Save off settings so this doesn't happen every time
+	PerforceSourceControl.SaveSettings();
+}
+
+
+void FPerforceSourceControlProvider::GetWorkspaceList(const FPerforceConnectionInfo& InConnectionInfo, TArray<FString>& OutWorkspaceList, TArray<FText>& OutErrorMessages)
+{
+	//attempt to ask perforce for a list of client specs that belong to this user
+	FPerforceConnection Connection(InConnectionInfo);
+	Connection.GetWorkspaceList(InConnectionInfo, FOnIsCancelled(), OutWorkspaceList, OutErrorMessages);
+}
+
+const FString& FPerforceSourceControlProvider::GetTicket() const
+{
+	return Ticket;
+}
+
+const FName& FPerforceSourceControlProvider::GetName() const
 {
 	return ProviderName;
 }
 
-ECommandResult::Type FGitSourceControlProvider::GetState( const TArray<FString>& InFiles, TArray< TSharedRef<ISourceControlState, ESPMode::ThreadSafe> >& OutState, EStateCacheUsage::Type InStateCacheUsage )
+void FPerforceSourceControlProvider::SetLastErrors(const TArray<FText>& InErrors)
+{
+	static FString SessionExpiredMessage(TEXT("Your session has expired, please login again.\n"));
+
+	bool bContainsLoginError = false;
+	for (const FText& It : InErrors)
+	{
+		if (It.ToString() == SessionExpiredMessage)
+		{
+			bContainsLoginError = true;
+			break;
+		}
+	}
+
+	bLoginError = bContainsLoginError;
+
+	FScopeLock Lock(&LastErrorsCriticalSection);
+	LastErrors = InErrors;
+}
+
+bool FPerforceSourceControlProvider::IsLoginError() const
+{
+	return bLoginError;
+}
+
+TArray<FText> FPerforceSourceControlProvider::GetLastErrors() const
+{
+	FScopeLock Lock(&LastErrorsCriticalSection);
+	TArray<FText> Result = LastErrors;
+	return Result;
+}
+
+int32 FPerforceSourceControlProvider::GetNumLastErrors() const
+{
+	FScopeLock Lock(&LastErrorsCriticalSection);
+	return LastErrors.Num();
+}
+
+ECommandResult::Type FPerforceSourceControlProvider::GetState( const TArray<FString>& InFiles, TArray< TSharedRef<ISourceControlState, ESPMode::ThreadSafe> >& OutState, EStateCacheUsage::Type InStateCacheUsage )
 {
 	if(!IsEnabled())
 	{
@@ -157,21 +245,38 @@ ECommandResult::Type FGitSourceControlProvider::GetState( const TArray<FString>&
 		Execute(ISourceControlOperation::Create<FUpdateStatus>(), AbsoluteFiles);
 	}
 
-	for(const auto& AbsoluteFile : AbsoluteFiles)
+	for( TArray<FString>::TConstIterator It(AbsoluteFiles); It; It++)
 	{
-		OutState.Add(GetStateInternal(*AbsoluteFile));
+		TSharedRef<FPerforceSourceControlState, ESPMode::ThreadSafe>* State = StateCache.Find(*It);
+		if(State != NULL)
+		{
+			// found cached item for this file, return that
+			OutState.Add(*State);
+		}
+		else
+		{
+			// cache an unknown state for this item & return that
+			TSharedRef<FPerforceSourceControlState, ESPMode::ThreadSafe> NewState = MakeShareable( new FPerforceSourceControlState(*It) );
+			StateCache.Add(*It, NewState);
+			OutState.Add(NewState);
+		}
 	}
 
 	return ECommandResult::Succeeded;
 }
 
-TArray<FSourceControlStateRef> FGitSourceControlProvider::GetCachedStateByPredicate(TFunctionRef<bool(const FSourceControlStateRef&)> Predicate) const
+bool FPerforceSourceControlProvider::RemoveFileFromCache(const FString& Filename)
+{
+	return StateCache.Remove(Filename) > 0;
+}
+
+TArray<FSourceControlStateRef> FPerforceSourceControlProvider::GetCachedStateByPredicate(TFunctionRef<bool(const FSourceControlStateRef&)> Predicate) const
 {
 	TArray<FSourceControlStateRef> Result;
-	for(const auto& CacheItem : StateCache)
+	for (const auto& CacheItem : StateCache)
 	{
 		FSourceControlStateRef State = CacheItem.Value;
-		if(Predicate(State))
+		if (Predicate(State))
 		{
 			Result.Add(State);
 		}
@@ -179,24 +284,19 @@ TArray<FSourceControlStateRef> FGitSourceControlProvider::GetCachedStateByPredic
 	return Result;
 }
 
-bool FGitSourceControlProvider::RemoveFileFromCache(const FString& Filename)
-{
-	return StateCache.Remove(Filename) > 0;
-}
-
-FDelegateHandle FGitSourceControlProvider::RegisterSourceControlStateChanged_Handle( const FSourceControlStateChanged::FDelegate& SourceControlStateChanged )
+FDelegateHandle FPerforceSourceControlProvider::RegisterSourceControlStateChanged_Handle( const FSourceControlStateChanged::FDelegate& SourceControlStateChanged )
 {
 	return OnSourceControlStateChanged.Add( SourceControlStateChanged );
 }
 
-void FGitSourceControlProvider::UnregisterSourceControlStateChanged_Handle( FDelegateHandle Handle )
+void FPerforceSourceControlProvider::UnregisterSourceControlStateChanged_Handle( FDelegateHandle Handle )
 {
 	OnSourceControlStateChanged.Remove( Handle );
 }
 
-ECommandResult::Type FGitSourceControlProvider::Execute( const TSharedRef<ISourceControlOperation, ESPMode::ThreadSafe>& InOperation, const TArray<FString>& InFiles, EConcurrency::Type InConcurrency, const FSourceControlOperationComplete& InOperationCompleteDelegate )
+ECommandResult::Type FPerforceSourceControlProvider::Execute( const TSharedRef<ISourceControlOperation, ESPMode::ThreadSafe>& InOperation, const TArray<FString>& InFiles, EConcurrency::Type InConcurrency, const FSourceControlOperationComplete& InOperationCompleteDelegate )
 {
-	if(!IsEnabled() && !(InOperation->GetName() == "Connect")) // Only Connect operation allowed while not Enabled (Connected)
+	if(!IsEnabled())
 	{
 		// Note that IsEnabled() always returns true so unless it is changed, this code will never be executed
 		InOperationCompleteDelegate.ExecuteIfBound(InOperation, ECommandResult::Failed);
@@ -205,15 +305,16 @@ ECommandResult::Type FGitSourceControlProvider::Execute( const TSharedRef<ISourc
 
 	TArray<FString> AbsoluteFiles = SourceControlHelpers::AbsoluteFilenames(InFiles);
 
-	// Query to see if we allow this operation
-	TSharedPtr<IGitSourceControlWorker, ESPMode::ThreadSafe> Worker = CreateWorker(InOperation->GetName());
+	// Query to see if the we allow this operation
+	TSharedPtr<IPerforceSourceControlWorker, ESPMode::ThreadSafe> Worker = CreateWorker(InOperation->GetName());
 	if(!Worker.IsValid())
 	{
 		// this operation is unsupported by this source control provider
 		FFormatNamedArguments Arguments;
 		Arguments.Add( TEXT("OperationName"), FText::FromName(InOperation->GetName()) );
 		Arguments.Add( TEXT("ProviderName"), FText::FromName(GetName()) );
-		FText Message(FText::Format(LOCTEXT("UnsupportedOperation", "Operation '{OperationName}' not supported by source control provider '{ProviderName}'"), Arguments));
+		FText Message = FText::Format(LOCTEXT("UnsupportedOperation", "Operation '{OperationName}' not supported by source control provider '{ProviderName}'"), Arguments);
+
 		FMessageLog("SourceControl").Error(Message);
 		InOperation->AddErrorMessge(Message);
 
@@ -221,88 +322,102 @@ ECommandResult::Type FGitSourceControlProvider::Execute( const TSharedRef<ISourc
 		return ECommandResult::Failed;
 	}
 
-	FGitSourceControlCommand* Command = new FGitSourceControlCommand(InOperation, Worker.ToSharedRef());
-	Command->Files = AbsoluteFiles;
-	Command->OperationCompleteDelegate = InOperationCompleteDelegate;
-
 	// fire off operation
 	if(InConcurrency == EConcurrency::Synchronous)
 	{
+		FPerforceSourceControlCommand* Command = new FPerforceSourceControlCommand(InOperation, Worker.ToSharedRef());
 		Command->bAutoDelete = false;
-		return ExecuteSynchronousCommand(*Command, InOperation->GetInProgressString());
+		Command->Files = AbsoluteFiles;
+		Command->StatusBranchNames = StatusBranchNames;
+		Command->ContentRoot = ContentRoot;
+		Command->OperationCompleteDelegate = InOperationCompleteDelegate;
+		return ExecuteSynchronousCommand(*Command, InOperation->GetInProgressString(), true);
 	}
 	else
 	{
+		FPerforceSourceControlCommand* Command = new FPerforceSourceControlCommand(InOperation, Worker.ToSharedRef());
 		Command->bAutoDelete = true;
-		return IssueCommand(*Command);
+		Command->Files = AbsoluteFiles;
+		Command->StatusBranchNames = StatusBranchNames;
+		Command->ContentRoot = ContentRoot;
+		Command->OperationCompleteDelegate = InOperationCompleteDelegate;
+		return IssueCommand(*Command, false);
 	}
 }
 
-bool FGitSourceControlProvider::CanCancelOperation( const TSharedRef<ISourceControlOperation, ESPMode::ThreadSafe>& InOperation ) const
+bool FPerforceSourceControlProvider::CanCancelOperation( const TSharedRef<ISourceControlOperation, ESPMode::ThreadSafe>& InOperation ) const
 {
-	return false;
-}
-
-void FGitSourceControlProvider::CancelOperation( const TSharedRef<ISourceControlOperation, ESPMode::ThreadSafe>& InOperation )
-{
-}
-
-bool FGitSourceControlProvider::UsesLocalReadOnlyState() const
-{
-	return false;
-}
-
-bool FGitSourceControlProvider::UsesChangelists() const
-{
-	return false;
-}
-
-bool FGitSourceControlProvider::UsesCheckout() const
-{
-	return false;
-}
-
-TSharedPtr<IGitSourceControlWorker, ESPMode::ThreadSafe> FGitSourceControlProvider::CreateWorker(const FName& InOperationName) const
-{
-	const FGetGitSourceControlWorker* Operation = WorkersMap.Find(InOperationName);
-	if(Operation != nullptr)
+	for (int32 CommandIndex = 0; CommandIndex < CommandQueue.Num(); ++CommandIndex)
 	{
-		return Operation->Execute();
+		FPerforceSourceControlCommand& Command = *CommandQueue[CommandIndex];
+		if (Command.Operation == InOperation)
+		{
+			check(Command.bAutoDelete);
+			return true;
+		}
 	}
 
-	return nullptr;
+	// operation was not in progress!
+	return false;
 }
 
-void FGitSourceControlProvider::RegisterWorker( const FName& InName, const FGetGitSourceControlWorker& InDelegate )
+void FPerforceSourceControlProvider::CancelOperation( const TSharedRef<ISourceControlOperation, ESPMode::ThreadSafe>& InOperation )
 {
-	WorkersMap.Add( InName, InDelegate );
+	for (int32 CommandIndex = 0; CommandIndex < CommandQueue.Num(); ++CommandIndex)
+	{
+		FPerforceSourceControlCommand& Command = *CommandQueue[CommandIndex];
+		if (Command.Operation == InOperation)
+		{
+			check(Command.bAutoDelete);
+			Command.Cancel();
+			return;
+		}
+	}
 }
 
-void FGitSourceControlProvider::OutputCommandMessages(const FGitSourceControlCommand& InCommand) const
+bool FPerforceSourceControlProvider::UsesLocalReadOnlyState() const
+{
+	return true;
+}
+
+bool FPerforceSourceControlProvider::UsesChangelists() const
+{
+	return true;
+}
+
+bool FPerforceSourceControlProvider::UsesCheckout() const
+{
+	return true;
+}
+
+void FPerforceSourceControlProvider::OutputCommandMessages(const FPerforceSourceControlCommand& InCommand) const
 {
 	FMessageLog SourceControlLog("SourceControl");
 
-	for(int32 ErrorIndex = 0; ErrorIndex < InCommand.ErrorMessages.Num(); ++ErrorIndex)
+	for (int32 ErrorIndex = 0; ErrorIndex < InCommand.ResultInfo.ErrorMessages.Num(); ++ErrorIndex)
 	{
-		SourceControlLog.Error(FText::FromString(InCommand.ErrorMessages[ErrorIndex]));
+		SourceControlLog.Error(InCommand.ResultInfo.ErrorMessages[ErrorIndex]);
 	}
 
-	for(int32 InfoIndex = 0; InfoIndex < InCommand.InfoMessages.Num(); ++InfoIndex)
+	for (int32 InfoIndex = 0; InfoIndex < InCommand.ResultInfo.InfoMessages.Num(); ++InfoIndex)
 	{
-		SourceControlLog.Info(FText::FromString(InCommand.InfoMessages[InfoIndex]));
+		SourceControlLog.Info(InCommand.ResultInfo.InfoMessages[InfoIndex]);
 	}
 }
 
-void FGitSourceControlProvider::Tick()
+void FPerforceSourceControlProvider::Tick()
 {
 	bool bStatesUpdated = false;
-	for(int32 CommandIndex = 0; CommandIndex < CommandQueue.Num(); ++CommandIndex)
+	for (int32 CommandIndex = 0; CommandIndex < CommandQueue.Num(); ++CommandIndex)
 	{
-		FGitSourceControlCommand& Command = *CommandQueue[CommandIndex];
-		if(Command.bExecuteProcessed)
+		FPerforceSourceControlCommand& Command = *CommandQueue[CommandIndex];
+		if (Command.bExecuteProcessed)
 		{
 			// Remove command from the queue
 			CommandQueue.RemoveAt(CommandIndex);
+
+			// update connection state
+			bServerAvailable = !Command.bConnectionDropped || Command.bCancelled;
 
 			// let command update the states of any files
 			bStatesUpdated |= Command.Worker->UpdateStates();
@@ -310,9 +425,14 @@ void FGitSourceControlProvider::Tick()
 			// dump any messages to output log
 			OutputCommandMessages(Command);
 
-			Command.ReturnResults();
+			// If the command was cancelled while trying to connect, the operation complete delegate will already
+			// have been called. Otherwise, now we have to call it.
+			if (!Command.bCancelledWhileTryingToConnect)
+			{
+				Command.ReturnResults();
+			}
 
-			// commands that are left in the array during a tick need to be deleted
+			//commands that are left in the array during a tick need to be deleted
 			if(Command.bAutoDelete)
 			{
 				// Only delete commands that are not running 'synchronously'
@@ -323,6 +443,19 @@ void FGitSourceControlProvider::Tick()
 			// of the command queue (which can happen in the completion delegate)
 			break;
 		}
+		// If a cancel is detected before the server has connected, abort immediately.
+		else if (Command.bCancelled && !Command.bConnectionWasSuccessful)
+		{
+			// Mark command as having been cancelled while trying to connect
+			Command.CancelWhileTryingToConnect();
+
+			// If this was a synchronous command, set it free so that it will be deleted automatically
+			// when its (still running) thread finally finishes
+			Command.bAutoDelete = true;
+
+			Command.ReturnResults();
+			break;
+		}
 	}
 
 	if(bStatesUpdated)
@@ -331,83 +464,219 @@ void FGitSourceControlProvider::Tick()
 	}
 }
 
-TArray< TSharedRef<ISourceControlLabel> > FGitSourceControlProvider::GetLabels( const FString& InMatchingSpec ) const
+static void ParseGetLabelsResults(const FP4RecordSet& InRecords, TArray< TSharedRef<ISourceControlLabel> >& OutLabels)
 {
-	TArray< TSharedRef<ISourceControlLabel> > Tags;
+	// Iterate over each record found as a result of the command, parsing it for relevant information
+	for (int32 Index = 0; Index < InRecords.Num(); ++Index)
+	{
+		const FP4Record& ClientRecord = InRecords[Index];
+		FString LabelName = ClientRecord(TEXT("label"));
+		if(LabelName.Len() > 0)
+		{
+			OutLabels.Add(MakeShareable( new FPerforceSourceControlLabel(LabelName) ) );
+		}
+	}
+}
 
-	return Tags;
+TArray< TSharedRef<ISourceControlLabel> > FPerforceSourceControlProvider::GetLabels( const FString& InMatchingSpec ) const
+{
+	TArray< TSharedRef<ISourceControlLabel> > Labels;
+
+	FPerforceSourceControlModule& PerforceSourceControl = FModuleManager::LoadModuleChecked<FPerforceSourceControlModule>("PerforceSourceControl");
+	FScopedPerforceConnection ScopedConnection(EConcurrency::Synchronous, PerforceSourceControl.AccessSettings().GetConnectionInfo());
+	if(ScopedConnection.IsValid())
+	{
+		FPerforceConnection& Connection = ScopedConnection.GetConnection();
+		FP4RecordSet Records;
+		TArray<FString> Parameters;
+		TArray<FText> ErrorMessages;
+		Parameters.Add(TEXT("-E"));
+		Parameters.Add(InMatchingSpec);
+		bool bConnectionDropped = false;
+		if(Connection.RunCommand(TEXT("labels"), Parameters, Records, ErrorMessages, FOnIsCancelled(), bConnectionDropped))
+		{
+			ParseGetLabelsResults(Records, Labels);
+		}
+		else
+		{
+			// output errors if any
+			for (int32 ErrorIndex = 0; ErrorIndex < ErrorMessages.Num(); ++ErrorIndex)
+			{
+				FMessageLog("SourceControl").Warning(ErrorMessages[ErrorIndex]);
+			}
+		}
+	}
+
+	return Labels;
 }
 
 #if SOURCE_CONTROL_WITH_SLATE
-TSharedRef<class SWidget> FGitSourceControlProvider::MakeSettingsWidget() const
+TSharedRef<class SWidget> FPerforceSourceControlProvider::MakeSettingsWidget() const
 {
-	return SNew(SGitSourceControlSettings);
+	return SNew(SPerforceSourceControlSettings);
 }
 #endif
 
-ECommandResult::Type FGitSourceControlProvider::ExecuteSynchronousCommand(FGitSourceControlCommand& InCommand, const FText& Task)
+TSharedPtr<IPerforceSourceControlWorker, ESPMode::ThreadSafe> FPerforceSourceControlProvider::CreateWorker(const FName& InOperationName) const
+{
+	const FGetPerforceSourceControlWorker* Operation = WorkersMap.Find(InOperationName);
+	if(Operation != NULL)
+	{
+		return Operation->Execute();
+	}
+
+	return NULL;
+}
+
+void FPerforceSourceControlProvider::RegisterWorker( const FName& InName, const FGetPerforceSourceControlWorker& InDelegate )
+{
+	WorkersMap.Add( InName, InDelegate );
+}
+
+ECommandResult::Type FPerforceSourceControlProvider::ExecuteSynchronousCommand(FPerforceSourceControlCommand& InCommand, const FText& Task, bool bSuppressResponseMsg)
 {
 	ECommandResult::Type Result = ECommandResult::Failed;
 
-	// Display the progress dialog if a string was provided
+	struct Local
 	{
-		FScopedSourceControlProgress Progress(Task);
-
-		// Issue the command asynchronously...
-		IssueCommand( InCommand );
-
-		// ... then wait for its completion (thus making it synchronous)
-		while(!InCommand.bExecuteProcessed)
+		static void CancelCommand(FPerforceSourceControlCommand* InControlCommand)
 		{
-			// Tick the command queue and update progress.
-			Tick();
-
-			Progress.Tick();
-
-			// Sleep for a bit so we don't busy-wait so much.
-			FPlatformProcess::Sleep(0.01f);
+			InControlCommand->Cancel();
 		}
+	};
 
-		// always do one more Tick() to make sure the command queue is cleaned up.
+	FText TaskText = Task;
+	// Display the progress dialog
+	if (bSuppressResponseMsg)
+	{
+		TaskText = FText::GetEmpty();
+	}
+	FScopedSourceControlProgress Progress(TaskText, FSimpleDelegate::CreateStatic(&Local::CancelCommand, &InCommand));
+
+	// Perform the command asynchronously
+	IssueCommand( InCommand, false );
+
+	// Wait until the command has been processed
+	while (!InCommand.bCancelledWhileTryingToConnect && CommandQueue.Contains(&InCommand))
+	{
+		// Tick the command queue and update progress.
 		Tick();
 
-		if(InCommand.bCommandSuccessful)
-		{
-			Result = ECommandResult::Succeeded;
-		}
+		Progress.Tick();
+
+		// Sleep for a bit so we don't busy-wait so much.
+		FPlatformProcess::Sleep(0.01f);
 	}
 
-	// Delete the command now (asynchronous commands are deleted in the Tick() method)
-	check(!InCommand.bAutoDelete);
-
-	// ensure commands that are not auto deleted do not end up in the command queue
-	if ( CommandQueue.Contains( &InCommand ) )
+	if (InCommand.bCancelled)
 	{
-		CommandQueue.Remove( &InCommand );
+		Result = ECommandResult::Cancelled;
 	}
-	delete &InCommand;
+	else if (InCommand.bCommandSuccessful)
+	{
+		Result = ECommandResult::Succeeded;
+	}
+
+	// If the command failed, inform the user that they need to try again
+	if ( !InCommand.bCancelled && Result != ECommandResult::Succeeded && !bSuppressResponseMsg )
+	{
+		FMessageDialog::Open( EAppMsgType::Ok, LOCTEXT("Perforce_ServerUnresponsive", "Perforce server is unresponsive. Please check your connection and try again.") );
+	}
+
+	// Delete the command now if not marked as auto-delete
+	if (!InCommand.bAutoDelete)
+	{
+		delete &InCommand;
+	}
 
 	return Result;
 }
 
-ECommandResult::Type FGitSourceControlProvider::IssueCommand(FGitSourceControlCommand& InCommand)
+ECommandResult::Type FPerforceSourceControlProvider::IssueCommand(FPerforceSourceControlCommand& InCommand, const bool bSynchronous)
 {
-	if(GThreadPool != nullptr)
+	if ( !bSynchronous && GThreadPool != NULL )
 	{
-		// Queue this to our worker thread(s) for resolving
+		// Queue this to our worker thread(s) for resolving.
+		// When asynchronous, any callback gets called from Tick().
 		GThreadPool->AddQueuedWork(&InCommand);
 		CommandQueue.Add(&InCommand);
 		return ECommandResult::Succeeded;
 	}
 	else
 	{
-		FText Message(LOCTEXT("NoSCCThreads", "There are no threads available to process the source control command."));
+		InCommand.bCommandSuccessful = InCommand.DoWork();
 
-		FMessageLog("SourceControl").Error(Message);
-		InCommand.bCommandSuccessful = false;
-		InCommand.Operation->AddErrorMessge(Message);
+		InCommand.Worker->UpdateStates();
+
+		OutputCommandMessages(InCommand);
 
 		return InCommand.ReturnResults();
 	}
 }
+
+bool FPerforceSourceControlProvider::QueryStateBranchConfig(const FString& ConfigSrc, const FString& ConfigDest)
+{
+
+	if (ConfigSrc.Len() == 0 || ConfigDest.Len() == 0)
+	{
+		return false;
+	}
+
+	// Request branch configuration from depot
+	FPerforceSourceControlModule& PerforceSourceControl = FModuleManager::LoadModuleChecked<FPerforceSourceControlModule>("PerforceSourceControl");
+	FScopedPerforceConnection ScopedConnection(EConcurrency::Synchronous, PerforceSourceControl.AccessSettings().GetConnectionInfo());
+	if (ScopedConnection.IsValid())
+	{
+		FPerforceConnection& Connection = ScopedConnection.GetConnection();
+		FP4RecordSet Records;
+		TArray<FString> Parameters;
+		TArray<FText> ErrorMessages;
+		Parameters.Add(TEXT("-o"));
+		Parameters.Add(*ConfigDest);
+		Parameters.Add(*ConfigSrc);
+
+		FText GeneralErrorMessage = LOCTEXT("StatusBranchConfigGeneralFailure", "Unable to retrieve status branch configuration from depot");
+
+		bool bConnectionDropped = false;
+		if (Connection.RunCommand(TEXT("print"), Parameters, Records, ErrorMessages, FOnIsCancelled(), bConnectionDropped))
+		{
+			if (Records.Num() < 1 || Records[0][TEXT("depotFile")] != ConfigSrc)
+			{
+				FMessageLog("SourceControl").Error(GeneralErrorMessage);
+				return false;
+			}
+		}
+		else
+		{
+			FMessageLog("SourceControl").Error(GeneralErrorMessage);
+
+			// output specific errors if any
+			for (int32 ErrorIndex = 0; ErrorIndex < ErrorMessages.Num(); ++ErrorIndex)
+			{
+				FMessageLog("SourceControl").Error(ErrorMessages[ErrorIndex]);
+			}
+
+			return false;
+		}
+	}
+	else
+	{
+		FMessageLog("SourceControl").Error(LOCTEXT("StatusBranchConfigNoConnection", "Unable to retrieve status branch configuration from depot, no connection"));
+		return false;
+	}
+
+	return true;
+}
+
+void FPerforceSourceControlProvider::RegisterStateBranches(const TArray<FString>& BranchNames, const FString& ContentRootIn)
+{
+	StatusBranchNames = BranchNames;
+	ContentRoot = ContentRootIn;
+}
+
+int32 FPerforceSourceControlProvider::GetStateBranchIndex(const FString& BranchName) const
+{
+	return StatusBranchNames.IndexOfByKey(BranchName);
+}
+
 #undef LOCTEXT_NAMESPACE

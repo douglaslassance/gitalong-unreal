@@ -1,646 +1,506 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
-#include "SGitSourceControlSettings.h"
-#include "Fonts/SlateFontInfo.h"
-#include "Misc/App.h"
-#include "Misc/Paths.h"
-#include "Misc/FileHelper.h"
+#include "SPerforceSourceControlSettings.h"
+#include "PerforceSourceControlPrivate.h"
+#include "Widgets/Views/STableRow.h"
 #include "Modules/ModuleManager.h"
-#include "Widgets/SBoxPanel.h"
-#include "Styling/SlateTypes.h"
-#include "Widgets/Layout/SBorder.h"
-#include "Widgets/Text/STextBlock.h"
-#include "Widgets/Input/SEditableTextBox.h"
+#include "Widgets/Images/SImage.h"
 #include "Widgets/Input/SButton.h"
-#include "Widgets/Input/SCheckBox.h"
-#include "Widgets/Input/SFilePathPicker.h"
-#include "EditorDirectories.h"
+#include "Widgets/Views/SListView.h"
+#include "Widgets/Input/SComboBox.h"
 #include "EditorStyleSet.h"
-#include "Widgets/Layout/SSeparator.h"
-#include "Widgets/Input/SMultiLineEditableTextBox.h"
-#include "Framework/Notifications/NotificationManager.h"
-#include "Widgets/Notifications/SNotificationList.h"
-#include "SourceControlOperations.h"
-#include "GitSourceControlModule.h"
-#include "GitSourceControlUtils.h"
+#include "ISourceControlModule.h"
+#include "PerforceSourceControlModule.h"
+#include "Widgets/Images/SThrobber.h"
 
-#define LOCTEXT_NAMESPACE "SGitSourceControlSettings"
+TWeakPtr<SEditableTextBox> SPerforceSourceControlSettings::PasswordTextBox;
 
-void SGitSourceControlSettings::Construct(const FArguments& InArgs)
+#define LOCTEXT_NAMESPACE "SPerforceSourceControlSettings"
+
+void SPerforceSourceControlSettings::Construct(const FArguments& InArgs)
 {
-	const FSlateFontInfo Font = FEditorStyle::GetFontStyle(TEXT("SourceControl.LoginWindow.Font"));
+	FPerforceSourceControlModule& PerforceSourceControl = FModuleManager::LoadModuleChecked<FPerforceSourceControlModule>( "PerforceSourceControl" );
 
-	bAutoCreateGitIgnore = true;
-	bAutoCreateReadme = true;
-	bAutoCreateGitAttributes = false;
-	bAutoInitialCommit = true;
+	bAreAdvancedSettingsExpanded = false;
 
-	InitialCommitMessage = LOCTEXT("InitialCommitMessage", "Initial commit");
+	// check our settings & query if we don't already have any
+	FString PortName = PerforceSourceControl.AccessSettings().GetPort();
+	FString UserName = PerforceSourceControl.AccessSettings().GetUserName();
 
-	const FText FileFilterType = NSLOCTEXT("GitSourceControl", "Executables", "Executables");
-#if PLATFORM_WINDOWS
-	const FString FileFilterText = FString::Printf(TEXT("%s (*.exe)|*.exe"), *FileFilterType.ToString());
-#else
-	const FString FileFilterText = FString::Printf(TEXT("%s"), *FileFilterType.ToString());
+	if (PortName.IsEmpty() && UserName.IsEmpty())
+	{
+#if USE_P4_API
+		ClientApi TestP4;
+		TestP4.SetProg("UE4");
+		Error P4Error;
+		TestP4.Init(&P4Error);
+		PortName = ANSI_TO_TCHAR(TestP4.GetPort().Text());
+		UserName = ANSI_TO_TCHAR(TestP4.GetUser().Text());
+		TestP4.Final(&P4Error);
+
+		PerforceSourceControl.AccessSettings().SetPort(PortName);
+		PerforceSourceControl.AccessSettings().SetUserName(UserName);
+		PerforceSourceControl.SaveSettings();
 #endif
+	}
 
-	ReadmeContent = FText::FromString(FString(TEXT("# ")) + FApp::GetProjectName() + "\n\nDeveloped with Unreal Engine 4\n");
+	FSlateFontInfo Font = FEditorStyle::GetFontStyle(TEXT("SourceControl.LoginWindow.Font"));
 
 	ChildSlot
 	[
-		SNew(SBorder)
-		.BorderImage( FEditorStyle::GetBrush("DetailsView.CategoryBottom"))
-		.Padding(FMargin(0.0f, 3.0f, 0.0f, 0.0f))
+		SNew(SVerticalBox)
+		+SVerticalBox::Slot()
+		.AutoHeight()
 		[
-			SNew(SVerticalBox)
-			// Path to the Git command line executable
-			+SVerticalBox::Slot()
-			.AutoHeight()
-			.Padding(2.0f)
-			.VAlign(VAlign_Center)
+			SNew( SBorder )
+			.BorderImage( FEditorStyle::GetBrush("DetailsView.CategoryMiddle") )
+			.Padding( FMargin( 0.0f, 3.0f, 0.0f, 0.0f ) )
 			[
 				SNew(SHorizontalBox)
 				+SHorizontalBox::Slot()
 				.FillWidth(1.0f)
 				[
-					SNew(STextBlock)
-					.Text(LOCTEXT("BinaryPathLabel", "Git Path"))
-					.ToolTipText(LOCTEXT("BinaryPathLabel_Tooltip", "Path to Git binary"))
-					.Font(Font)
+					SNew(SVerticalBox)
+					+SVerticalBox::Slot()
+					.FillHeight(1.0f)
+					.Padding(2.0f)
+					.VAlign(VAlign_Center)
+					[
+						SNew(STextBlock)
+						.Text(LOCTEXT("PortLabel", "Server"))
+						.ToolTipText( LOCTEXT("PortLabel_Tooltip", "The server and port for your Perforce server. Usage ServerName:1234.") )
+						.Font(Font)
+					]
+					+SVerticalBox::Slot()
+					.FillHeight(1.0f)
+					.Padding(2.0f)
+					.VAlign(VAlign_Center)
+					[
+						SNew(STextBlock)
+						.Text(LOCTEXT("UserNameLabel", "User Name"))
+						.ToolTipText( LOCTEXT("UserNameLabel_Tooltip", "Perforce username.") )
+						.Font(Font)
+					]
+					+SVerticalBox::Slot()
+					.FillHeight(1.0f)
+					.Padding(2.0f)
+					.VAlign(VAlign_Center)
+					[
+						SNew(STextBlock)
+						.Text(LOCTEXT("WorkspaceLabel", "Workspace"))
+						.ToolTipText( LOCTEXT("WorkspaceLabel_Tooltip", "Perforce workspace.") )
+						.Font(Font)
+					]
+					+SVerticalBox::Slot()
+					.FillHeight(1.0f)
+					.Padding(2.0f)
+					.VAlign(VAlign_Center)
+					[
+						SNew(STextBlock)
+						.Text(LOCTEXT("AutoWorkspaces", "Available Workspaces"))
+						.ToolTipText( LOCTEXT("AutoWorkspaces_Tooltip", "Choose from a list of available workspaces. Requires a server and username before use.") )
+						.Font(Font)
+					]
 				]
 				+SHorizontalBox::Slot()
 				.FillWidth(2.0f)
 				[
-					SNew(SFilePathPicker)
-					.BrowseButtonImage(FEditorStyle::GetBrush("PropertyWindow.Button_Ellipsis"))
-					.BrowseButtonStyle(FEditorStyle::Get(), "HoverHintOnly")
-					.BrowseButtonToolTip(LOCTEXT("BinaryPathLabel_Tooltip", "Path to Git binary"))
-					.BrowseDirectory(FEditorDirectories::Get().GetLastDirectory(ELastDirectory::GENERIC_OPEN))
-					.BrowseTitle(LOCTEXT("BinaryPathBrowseTitle", "File picker..."))
-					.FilePath(this, &SGitSourceControlSettings::GetBinaryPathString)
-					.FileTypeFilter(FileFilterText)
-					.OnPathPicked(this, &SGitSourceControlSettings::OnBinaryPathPicked)
-				]
+					SNew(SVerticalBox)
+					+SVerticalBox::Slot()
+					.FillHeight(1.0f)
+					.Padding(2.0f)
+					[
+						SNew(SEditableTextBox)
+						.Text(this, &SPerforceSourceControlSettings::GetPortText)
+						.ToolTipText( LOCTEXT("PortLabel_Tooltip", "The server and port for your Perforce server. Usage ServerName:1234.") )
+						.OnTextCommitted(this, &SPerforceSourceControlSettings::OnPortTextCommited)
+						.OnTextChanged(this, &SPerforceSourceControlSettings::OnPortTextCommited, ETextCommit::Default)
+						.Font(Font)
+					]
+					+SVerticalBox::Slot()
+					.FillHeight(1.0f)
+					.Padding(2.0f)
+					[
+						SNew(SEditableTextBox)
+						.Text(this, &SPerforceSourceControlSettings::GetUserNameText)
+						.ToolTipText( LOCTEXT("UserNameLabel_Tooltip", "Perforce username.") )
+						.OnTextCommitted(this, &SPerforceSourceControlSettings::OnUserNameTextCommited)
+						.OnTextChanged(this, &SPerforceSourceControlSettings::OnUserNameTextCommited, ETextCommit::Default)
+						.Font(Font)
+					]
+					+SVerticalBox::Slot()
+					.FillHeight(1.0f)
+					.Padding(2.0f)
+					[
+						SNew(SEditableTextBox)
+						.Text(this, &SPerforceSourceControlSettings::GetWorkspaceText)
+						.ToolTipText( LOCTEXT("WorkspaceLabel_Tooltip", "Perforce workspace.") )
+						.OnTextCommitted(this, &SPerforceSourceControlSettings::OnWorkspaceTextCommited)
+						.OnTextChanged(this, &SPerforceSourceControlSettings::OnWorkspaceTextCommited, ETextCommit::Default)
+						.Font(Font)
+					]
+					+SVerticalBox::Slot()
+					.FillHeight(1.0f)
+					.Padding(2.0f)
+					[
+						SAssignNew(WorkspaceCombo, SComboButton)
+						.OnGetMenuContent(this, &SPerforceSourceControlSettings::OnGetMenuContent)
+						.ContentPadding(1)
+						.ToolTipText( LOCTEXT("AutoWorkspaces_Tooltip", "Choose from a list of available workspaces. Requires a server and username before use.") )
+						.ButtonContent()
+						[
+							SNew( STextBlock )
+							.Text( this, &SPerforceSourceControlSettings::OnGetButtonText )
+							.Font(Font)
+						]
+					]
+				]	
 			]
-			// Root of the local repository
-			+SVerticalBox::Slot()
-			.FillHeight(1.0f)
-			.Padding(2.0f)
-			.VAlign(VAlign_Center)
+		]
+		+SVerticalBox::Slot()
+		.AutoHeight()
+		[
+			SNew( SBorder )
+			.BorderImage( FEditorStyle::GetBrush("DetailsView.CategoryMiddle") )
+			.Padding( FMargin( 0.0f, 3.0f, 0.0f, 0.0f ) )
+			.Visibility(this, &SPerforceSourceControlSettings::GetAdvancedSettingsVisibility)
+			[
+				SNew( SImage )
+				.Image( FEditorStyle::GetBrush("DetailsView.AdvancedDropdownBorder.Open") )
+			]
+		]
+		+SVerticalBox::Slot()
+		.AutoHeight()
+		[
+			SNew( SBorder )
+			.BorderImage( FEditorStyle::GetBrush("DetailsView.CategoryMiddle") )
+			.Padding( FMargin( 0.0f, 0.0f, 0.0f, 0.0f ) )
+			.Visibility(this, &SPerforceSourceControlSettings::GetAdvancedSettingsVisibility)
 			[
 				SNew(SHorizontalBox)
 				+SHorizontalBox::Slot()
 				.FillWidth(1.0f)
 				[
-					SNew(STextBlock)
-					.Text(LOCTEXT("RepositoryRootLabel", "Root of the repository"))
-					.ToolTipText(LOCTEXT("RepositoryRootLabel_Tooltip", "Path to the root of the Git repository"))
-					.Font(Font)
+					SNew(SVerticalBox)
+					+SVerticalBox::Slot()
+					.FillHeight(1.0f)
+					.Padding(2.0f)
+					.VAlign(VAlign_Center)
+					[
+						SNew(STextBlock)
+						.Text(LOCTEXT("HostLabel", "Host"))
+						.ToolTipText(LOCTEXT("HostLabel_Tooltip", "If you wish to impersonate a particular host, enter this here. This is not normally needed."))
+						.Font(Font)
+					]
+					+SVerticalBox::Slot()
+					.FillHeight(1.0f)
+					.Padding(2.0f)
+					.VAlign(VAlign_Center)
+					[
+						SNew(STextBlock)
+						.Text(LOCTEXT("PasswordLabel", "Password"))
+						.ToolTipText(LOCTEXT("PasswordLabel_Tooltip", "Perforce password. This normally only needs to be entered if your ticket has expired."))
+						.Font(Font)
+					]
 				]
 				+SHorizontalBox::Slot()
 				.FillWidth(2.0f)
 				[
-					SNew(STextBlock)
-					.Text(this, &SGitSourceControlSettings::GetPathToRepositoryRoot)
-					.ToolTipText(LOCTEXT("RepositoryRootLabel_Tooltip", "Path to the root of the Git repository"))
-					.Font(Font)
-				]
+					SNew(SVerticalBox)
+					+SVerticalBox::Slot()
+					.FillHeight(1.0f)
+					.Padding(2.0f)
+					[
+						SNew(SEditableTextBox)
+						.Text(this, &SPerforceSourceControlSettings::GetHostText)
+						.ToolTipText(LOCTEXT("HostLabel_Tooltip", "If you wish to impersonate a particular host, enter this here. This is not normally needed."))
+						.OnTextCommitted(this, &SPerforceSourceControlSettings::OnHostTextCommited)
+						.OnTextChanged(this, &SPerforceSourceControlSettings::OnHostTextCommited, ETextCommit::Default)
+						.Font(Font)
+					]
+					+SVerticalBox::Slot()
+					.FillHeight(1.0f)
+					.Padding(2.0f)
+					[
+						SAssignNew(PasswordTextBox, SEditableTextBox)
+						.ToolTipText( LOCTEXT("PasswordLabel_Tooltip", "Perforce password. This normally only needs to be entered if your ticket has expired.") )
+						.Font(Font)
+						.IsPassword(true)
+					]
+				]	
 			]
-			// User Name
-			+SVerticalBox::Slot()
-			.FillHeight(1.0f)
-			.Padding(2.0f)
-			.VAlign(VAlign_Center)
+		]
+		+SVerticalBox::Slot()
+		.AutoHeight()
+		[
+			SNew( SBorder )
+			.BorderImage( FEditorStyle::GetBrush("DetailsView.AdvancedDropdownBorder") )
+			.Padding( FMargin( 0.0f, 3.0f, 0.0f, 0.0f ) )
 			[
-				SNew(SHorizontalBox)
-				+SHorizontalBox::Slot()
-				.FillWidth(1.0f)
-				[
-					SNew(STextBlock)
-					.Text(LOCTEXT("GitUserName", "User Name"))
-					.ToolTipText(LOCTEXT("GitUserName_Tooltip", "User name configured for the Git repository"))
-					.Font(Font)
-				]
-				+SHorizontalBox::Slot()
-				.FillWidth(2.0f)
-				[
-					SNew(STextBlock)
-					.Text(this, &SGitSourceControlSettings::GetUserName)
-					.ToolTipText(LOCTEXT("GitUserName_Tooltip", "User name configured for the Git repository"))
-					.Font(Font)
-				]
-			]
-			// User e-mail
-			+SVerticalBox::Slot()
-			.FillHeight(1.0f)
-			.Padding(2.0f)
-			.VAlign(VAlign_Center)
-			[
-				SNew(SHorizontalBox)
-				+SHorizontalBox::Slot()
-				.FillWidth(1.0f)
-				[
-					SNew(STextBlock)
-					.Text(LOCTEXT("GitUserEmail", "E-Mail"))
-					.ToolTipText(LOCTEXT("GitUserEmail_Tooltip", "User e-mail configured for the Git repository"))
-					.Font(Font)
-				]
-				+SHorizontalBox::Slot()
-				.FillWidth(2.0f)
-				[
-					SNew(STextBlock)
-					.Text(this, &SGitSourceControlSettings::GetUserEmail)
-					.ToolTipText(LOCTEXT("GitUserEmail_Tooltip", "User e-mail configured for the Git repository"))
-					.Font(Font)
-				]
-			]
-			// Separator
-			+SVerticalBox::Slot()
-			.AutoHeight()
-			.Padding(2.0f)
-			.VAlign(VAlign_Center)
-			[
-				SNew(SSeparator)
-			]
-			// Explanation text
-			+SVerticalBox::Slot()
-			.FillHeight(1.0f)
-			.Padding(2.0f)
-			.VAlign(VAlign_Center)
-			[
-				SNew(SHorizontalBox)
-				.Visibility(this, &SGitSourceControlSettings::CanInitializeGitRepository)
-				+SHorizontalBox::Slot()
-				.FillWidth(1.0f)
+				SAssignNew( ExpanderButton, SButton )
+				.ButtonStyle( FEditorStyle::Get(), "NoBorder" )
+				.ToolTipText( LOCTEXT("DisplayAdvancedSettings", "Display advanced settings"))
 				.HAlign(HAlign_Center)
+				.ContentPadding(2)
+				.OnClicked( this, &SPerforceSourceControlSettings::OnAdvancedSettingsClicked )
 				[
-					SNew(STextBlock)
-					.Text(LOCTEXT("RepositoryNotFound", "Current Project is not contained in a Git Repository. Fill the form below to initialize a new Repository."))
-					.ToolTipText(LOCTEXT("RepositoryNotFound_Tooltip", "No Repository found at the level or above the current Project"))
-					.Font(Font)
-				]
-			]
-			// Option to configure the URL of the default remote 'origin'
-			+SVerticalBox::Slot()
-			.AutoHeight()
-			.Padding(2.0f)
-			.VAlign(VAlign_Center)
-			[
-				SNew(SHorizontalBox)
-				.Visibility(this, &SGitSourceControlSettings::CanInitializeGitRepository)
-				.ToolTipText(LOCTEXT("ConfigureOrigin_Tooltip", "Configure the URL of the default remote 'origin'"))
-				+SHorizontalBox::Slot()
-				.FillWidth(1.0f)
-				[
-					SNew(STextBlock)
-					.Text(LOCTEXT("ConfigureOrigin", "URL of the remote server 'origin'"))
-					.Font(Font)
-				]
-				+SHorizontalBox::Slot()
-				.FillWidth(2.0f)
-				.VAlign(VAlign_Center)
-				[
-					SNew(SEditableTextBox)
-					.Text(this, &SGitSourceControlSettings::GetRemoteUrl)
-					.OnTextCommitted(this, &SGitSourceControlSettings::OnRemoteUrlCommited)
-					.Font(Font)
-				]
-			]
-			// Option to add a proper .gitignore file (true by default)
-			+SVerticalBox::Slot()
-			.AutoHeight()
-			.Padding(2.0f)
-			.VAlign(VAlign_Center)
-			[
-				SNew(SHorizontalBox)
-				.Visibility(this, &SGitSourceControlSettings::CanInitializeGitRepository)
-				+SHorizontalBox::Slot()
-				.FillWidth(0.1f)
-				[
-					SNew(SCheckBox)
-					.ToolTipText(LOCTEXT("CreateGitIgnore_Tooltip", "Create and add a standard '.gitignore' file"))
-					.IsChecked(ECheckBoxState::Checked)
-					.OnCheckStateChanged(this, &SGitSourceControlSettings::OnCheckedCreateGitIgnore)
-				]
-				+SHorizontalBox::Slot()
-				.FillWidth(2.9f)
-				.VAlign(VAlign_Center)
-				[
-					SNew(STextBlock)
-					.Text(LOCTEXT("CreateGitIgnore", "Add a .gitignore file"))
-					.ToolTipText(LOCTEXT("CreateGitIgnore_Tooltip", "Create and add a standard '.gitignore' file"))
-					.Font(Font)
-				]
-			]
-			// Option to add a README.md file with custom content
-			+SVerticalBox::Slot()
-			.AutoHeight()
-			.Padding(2.0f)
-			.VAlign(VAlign_Center)
-			[
-				SNew(SHorizontalBox)
-				.Visibility(this, &SGitSourceControlSettings::CanInitializeGitRepository)
-				.ToolTipText(LOCTEXT("CreateReadme_Tooltip", "Add a README.md file"))
-				+SHorizontalBox::Slot()
-				.FillWidth(0.1f)
-				[
-					SNew(SCheckBox)
-					.IsChecked(ECheckBoxState::Checked)
-					.OnCheckStateChanged(this, &SGitSourceControlSettings::OnCheckedCreateReadme)
-				]
-				+SHorizontalBox::Slot()
-				.FillWidth(0.9f)
-				.VAlign(VAlign_Center)
-				[
-					SNew(STextBlock)
-					.Text(LOCTEXT("CreateReadme", "Add a basic README.md file"))
-					.Font(Font)
-				]
-				+SHorizontalBox::Slot()
-				.FillWidth(2.0f)
-				.Padding(2.0f)
-				[
-					SNew(SMultiLineEditableTextBox)
-					.Text(this, &SGitSourceControlSettings::GetReadmeContent)
-					.OnTextCommitted(this, &SGitSourceControlSettings::OnReadmeContentCommited)
-					.IsEnabled(this, &SGitSourceControlSettings::GetAutoCreateReadme)
-					.SelectAllTextWhenFocused(true)
-					.Font(Font)
-				]
-			]
-			// Option to add a proper .gitattributes file for Git LFS (false by default)
-			+SVerticalBox::Slot()
-			.AutoHeight()
-			.Padding(2.0f)
-			.VAlign(VAlign_Center)
-			[
-				SNew(SHorizontalBox)
-				.Visibility(this, &SGitSourceControlSettings::CanInitializeGitRepository)
-				+SHorizontalBox::Slot()
-				.FillWidth(0.1f)
-				[
-					SNew(SCheckBox)
-					.ToolTipText(LOCTEXT("CreateGitAttributesAll_Tooltip", "Create and add a '.gitattributes' file to enable Git LFS for the whole 'Content/' directory (needs Git LFS extensions to be installed)."))
-					.IsChecked(ECheckBoxState::Unchecked)
-					.OnCheckStateChanged(this, &SGitSourceControlSettings::OnCheckedCreateGitAttributes)
-					.IsEnabled(this, &SGitSourceControlSettings::CanInitializeGitLfs)
-				]
-				+SHorizontalBox::Slot()
-				.FillWidth(2.9f)
-				.VAlign(VAlign_Center)
-				[
-					SNew(STextBlock)
-					.Text(LOCTEXT("CreateGitAttributes", "Add a .gitattributes file to enable Git LFS"))
-					.ToolTipText(LOCTEXT("CreateGitAttributes_Tooltip", "Create and add a '.gitattributes' file to enable Git LFS"))
-					.Font(Font)
-				]
-			]
-			// Option to Make the initial Git commit with custom message
-			+SVerticalBox::Slot()
-			.AutoHeight()
-			.Padding(2.0f)
-			.VAlign(VAlign_Center)
-			[
-				SNew(SHorizontalBox)
-				.Visibility(this, &SGitSourceControlSettings::CanInitializeGitRepository)
-				+SHorizontalBox::Slot()
-				.FillWidth(0.1f)
-				[
-					SNew(SCheckBox)
-					.ToolTipText(LOCTEXT("InitialGitCommit_Tooltip", "Make the initial Git commit"))
-					.IsChecked(ECheckBoxState::Checked)
-					.OnCheckStateChanged(this, &SGitSourceControlSettings::OnCheckedInitialCommit)
-				]
-				+SHorizontalBox::Slot()
-				.FillWidth(0.9f)
-				.VAlign(VAlign_Center)
-				[
-					SNew(STextBlock)
-					.Text(LOCTEXT("InitialGitCommit", "Make the initial Git Commit"))
-					.ToolTipText(LOCTEXT("InitialGitCommit_Tooltip", "Make the initial Git commit"))
-					.Font(Font)
-				]
-				+SHorizontalBox::Slot()
-				.FillWidth(2.0f)
-				.Padding(2.0f)
-				[
-					SNew(SMultiLineEditableTextBox)
-					.Text(this, &SGitSourceControlSettings::GetInitialCommitMessage)
-					.ToolTipText(LOCTEXT("InitialCommitMessage_Tooltip", "Message of initial commit"))
-					.OnTextCommitted(this, &SGitSourceControlSettings::OnInitialCommitMessageCommited)
-					.Font(Font)
-				]
-			]
-			// Button to initialize the project with Git, create .gitignore/.gitattributes files, and make the first commit)
-			+SVerticalBox::Slot()
-			.FillHeight(2.5f)
-			.Padding(4.0f)
-			.VAlign(VAlign_Center)
-			[
-				SNew(SHorizontalBox)
-				.Visibility(this, &SGitSourceControlSettings::CanInitializeGitRepository)
-				+SHorizontalBox::Slot()
-				.FillWidth(1.0f)
-				[
-					SNew(SButton)
-					.Text(LOCTEXT("GitInitRepository", "Initialize project with Git"))
-					.ToolTipText(LOCTEXT("GitInitRepository_Tooltip", "Initialize current project as a new Git repository"))
-					.OnClicked(this, &SGitSourceControlSettings::OnClickedInitializeGitRepository)
-					.HAlign(HAlign_Center)
-					.ContentPadding(6)
+					SNew( SImage )
+					.Image( this, &SPerforceSourceControlSettings::GetAdvancedPulldownImage )
 				]
 			]
 		]
 	];
+
+	// fire off the workspace query
+	State = ESourceControlOperationState::NotQueried;
+	QueryWorkspaces();
 }
 
-SGitSourceControlSettings::~SGitSourceControlSettings()
+FString SPerforceSourceControlSettings::GetPassword()
 {
-	RemoveInProgressNotification();
-}
-
-FString SGitSourceControlSettings::GetBinaryPathString() const
-{
-	FGitSourceControlModule& GitSourceControl = FModuleManager::LoadModuleChecked<FGitSourceControlModule>("GitSourceControl");
-	return GitSourceControl.AccessSettings().GetBinaryPath();
-}
-
-void SGitSourceControlSettings::OnBinaryPathPicked( const FString& PickedPath ) const
-{
-	FGitSourceControlModule& GitSourceControl = FModuleManager::LoadModuleChecked<FGitSourceControlModule>("GitSourceControl");
-	FString PickedFullPath = FPaths::ConvertRelativePathToFull(PickedPath);
-	const bool bChanged = GitSourceControl.AccessSettings().SetBinaryPath(PickedFullPath);
-	if(bChanged)
+	if(PasswordTextBox.IsValid())
 	{
-		// Re-Check provided git binary path for each change
-		GitSourceControl.GetProvider().CheckGitAvailability();
-		if(GitSourceControl.GetProvider().IsGitAvailable())
-		{
-			GitSourceControl.SaveSettings();
-		}
+		return PasswordTextBox.Pin()->GetText().ToString();
+	}
+	return FString();
+}
+
+void SPerforceSourceControlSettings::Tick( const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime )
+{
+	// When a dialog is up, the editor stops ticking, and we take over:
+	if( FSlateApplication::Get().GetActiveModalWindow().IsValid())
+	{
+		ISourceControlModule::Get().Tick();
+	}
+	return SCompoundWidget::Tick(AllottedGeometry, InCurrentTime, InDeltaTime );
+}
+
+FText SPerforceSourceControlSettings::GetPortText() const
+{
+	FPerforceSourceControlModule& PerforceSourceControl = FModuleManager::LoadModuleChecked<FPerforceSourceControlModule>( "PerforceSourceControl" );
+	return FText::FromString(PerforceSourceControl.AccessSettings().GetPort());
+}
+
+void SPerforceSourceControlSettings::OnPortTextCommited(const FText& InText, ETextCommit::Type InCommitType) const
+{
+	FPerforceSourceControlModule& PerforceSourceControl = FModuleManager::LoadModuleChecked<FPerforceSourceControlModule>( "PerforceSourceControl" );
+	PerforceSourceControl.AccessSettings().SetPort(InText.ToString());
+	PerforceSourceControl.SaveSettings();
+}
+
+FText SPerforceSourceControlSettings::GetUserNameText() const
+{
+	FPerforceSourceControlModule& PerforceSourceControl = FModuleManager::LoadModuleChecked<FPerforceSourceControlModule>( "PerforceSourceControl" );
+	return FText::FromString(PerforceSourceControl.AccessSettings().GetUserName());
+}
+
+void SPerforceSourceControlSettings::OnUserNameTextCommited(const FText& InText, ETextCommit::Type InCommitType) const
+{
+	FPerforceSourceControlModule& PerforceSourceControl = FModuleManager::LoadModuleChecked<FPerforceSourceControlModule>( "PerforceSourceControl" );
+	PerforceSourceControl.AccessSettings().SetUserName(InText.ToString());
+	PerforceSourceControl.SaveSettings();
+}
+
+FText SPerforceSourceControlSettings::GetWorkspaceText() const
+{
+	FPerforceSourceControlModule& PerforceSourceControl = FModuleManager::LoadModuleChecked<FPerforceSourceControlModule>( "PerforceSourceControl" );
+	return FText::FromString(PerforceSourceControl.AccessSettings().GetWorkspace());
+}
+
+void SPerforceSourceControlSettings::OnWorkspaceTextCommited(const FText& InText, ETextCommit::Type InCommitType) const
+{
+	FPerforceSourceControlModule& PerforceSourceControl = FModuleManager::LoadModuleChecked<FPerforceSourceControlModule>( "PerforceSourceControl" );
+	PerforceSourceControl.AccessSettings().SetWorkspace(InText.ToString());
+	PerforceSourceControl.SaveSettings();
+}
+
+FText SPerforceSourceControlSettings::GetHostText() const
+{
+	FPerforceSourceControlModule& PerforceSourceControl = FModuleManager::LoadModuleChecked<FPerforceSourceControlModule>( "PerforceSourceControl" );
+	return FText::FromString(PerforceSourceControl.AccessSettings().GetHostOverride());
+}
+
+void SPerforceSourceControlSettings::OnHostTextCommited(const FText& InText, ETextCommit::Type InCommitType) const
+{
+	FPerforceSourceControlModule& PerforceSourceControl = FModuleManager::LoadModuleChecked<FPerforceSourceControlModule>( "PerforceSourceControl" );
+	PerforceSourceControl.AccessSettings().SetHostOverride(InText.ToString());
+	PerforceSourceControl.SaveSettings();
+}
+
+void SPerforceSourceControlSettings::QueryWorkspaces()
+{
+	if(State != ESourceControlOperationState::Querying)
+	{
+		Workspaces.Empty();
+		CurrentWorkspace = FString();
+
+		// fire off the workspace query
+		ISourceControlModule& SourceControl = FModuleManager::LoadModuleChecked<ISourceControlModule>( "SourceControl" );
+		ISourceControlProvider& Provider = SourceControl.GetProvider();
+		GetWorkspacesOperation = ISourceControlOperation::Create<FGetWorkspaces>();
+		Provider.Execute(GetWorkspacesOperation.ToSharedRef(), EConcurrency::Asynchronous, FSourceControlOperationComplete::CreateSP(this, &SPerforceSourceControlSettings::OnSourceControlOperationComplete) );
+
+		State = ESourceControlOperationState::Querying;
 	}
 }
 
-FText SGitSourceControlSettings::GetPathToRepositoryRoot() const
+void SPerforceSourceControlSettings::OnSourceControlOperationComplete(const FSourceControlOperationRef& InOperation, ECommandResult::Type InResult)
 {
-	FGitSourceControlModule& GitSourceControl = FModuleManager::LoadModuleChecked<FGitSourceControlModule>("GitSourceControl");
-	return FText::FromString(GitSourceControl.GetProvider().GetPathToRepositoryRoot());
-}
-
-FText SGitSourceControlSettings::GetUserName() const
-{
-	FGitSourceControlModule& GitSourceControl = FModuleManager::LoadModuleChecked<FGitSourceControlModule>("GitSourceControl");
-	return FText::FromString(GitSourceControl.GetProvider().GetUserName());
-}
-
-FText SGitSourceControlSettings::GetUserEmail() const
-{
-	FGitSourceControlModule& GitSourceControl = FModuleManager::LoadModuleChecked<FGitSourceControlModule>("GitSourceControl");
-	return FText::FromString(GitSourceControl.GetProvider().GetUserEmail());
-}
-
-EVisibility SGitSourceControlSettings::CanInitializeGitRepository() const
-{
-	FGitSourceControlModule& GitSourceControl = FModuleManager::LoadModuleChecked<FGitSourceControlModule>("GitSourceControl");
-	const bool bGitAvailable = GitSourceControl.GetProvider().IsGitAvailable();
-	const bool bGitRepositoryFound = GitSourceControl.GetProvider().IsEnabled();
-	return (bGitAvailable && !bGitRepositoryFound) ? EVisibility::Visible : EVisibility::Collapsed;
-}
-
-bool SGitSourceControlSettings::CanInitializeGitLfs() const
-{
-	FGitSourceControlModule& GitSourceControl = FModuleManager::LoadModuleChecked<FGitSourceControlModule>("GitSourceControl");
-	const FString& PathToGitBinary = GitSourceControl.AccessSettings().GetBinaryPath();
-	const bool bGitLfsAvailable = GitSourceControl.GetProvider().GetGitVersion().bHasGitLfs;
-	const bool bGitRepositoryFound = GitSourceControl.GetProvider().IsEnabled();
-	return (bGitLfsAvailable && !bGitRepositoryFound);
-}
-
-FReply SGitSourceControlSettings::OnClickedInitializeGitRepository()
-{
-	FGitSourceControlModule& GitSourceControl = FModuleManager::LoadModuleChecked<FGitSourceControlModule>("GitSourceControl");
-	const FString& PathToGitBinary = GitSourceControl.AccessSettings().GetBinaryPath();
-	const FString PathToProjectDir = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir());
-	TArray<FString> InfoMessages;
-	TArray<FString> ErrorMessages;
-
-	// 1.a. Synchronous (very quick) "git init" operation: initialize a Git local repository with a .git/ subdirectory
-	GitSourceControlUtils::RunCommand(TEXT("init"), PathToGitBinary, PathToProjectDir, TArray<FString>(), TArray<FString>(), InfoMessages, ErrorMessages);
-	// 1.b. Synchronous (very quick) "git remote add" operation: configure the URL of the default remote server 'origin' if specified
-	if(!RemoteUrl.IsEmpty())
+	if(InResult == ECommandResult::Succeeded)
 	{
-		TArray<FString> Parameters;
-		Parameters.Add(TEXT("add origin"));
-		Parameters.Add(RemoteUrl.ToString());
-		GitSourceControlUtils::RunCommand(TEXT("remote"), PathToGitBinary, PathToProjectDir, Parameters, TArray<FString>(), InfoMessages, ErrorMessages);
+		check(InOperation->GetName() == "GetWorkspaces");
+		check(GetWorkspacesOperation == StaticCastSharedRef<FGetWorkspaces>(InOperation));
+
+		// refresh workspaces list from operation results
+		Workspaces.Empty();
+		for(auto Iter(GetWorkspacesOperation->Results.CreateConstIterator()); Iter; Iter++)
+		{
+			Workspaces.Add(MakeShareable(new FString(*Iter)));
+		}
 	}
 
-	// Check the new repository status to enable connection (branch, user e-mail)
-	GitSourceControl.GetProvider().CheckRepositoryStatus(PathToGitBinary);
-	if(GitSourceControl.GetProvider().IsAvailable())
+	GetWorkspacesOperation.Reset();
+	State = ESourceControlOperationState::Queried;
+}
+
+TSharedRef<SWidget> SPerforceSourceControlSettings::OnGetMenuContent()
+{
+	// fire off the workspace query - we may have just edited the settings
+	QueryWorkspaces();
+	
+	return
+		SNew(SHorizontalBox)
+		+SHorizontalBox::Slot()
+		.FillWidth(1)
+		.VAlign(VAlign_Center)
+		[
+			SNew(SHorizontalBox)
+			.Visibility(this, &SPerforceSourceControlSettings::GetThrobberVisibility)
+			+SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			[
+				SNew(SThrobber)
+			]
+			+SHorizontalBox::Slot()
+			.FillWidth(1)
+			.VAlign(VAlign_Center)
+			[
+				SNew(STextBlock)
+				.Text(LOCTEXT("WorkspacesOperationInProgress", "Looking for Perforce workspaces..."))
+				.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))	
+			]
+			+SHorizontalBox::Slot()
+			.AutoWidth()
+			.HAlign(HAlign_Right)
+			.VAlign(VAlign_Center)
+			[
+				SNew(SButton)
+				.OnClicked(this, &SPerforceSourceControlSettings::OnCancelWorkspacesRequest)
+				.Content()
+				[
+					SNew(STextBlock)
+					.Text(LOCTEXT("CancelButtonLabel", "Cancel"))
+				]
+			]
+		]
+		+SHorizontalBox::Slot()
+		.FillWidth(1)
+		.Padding(2.0f)
+		[
+			SNew(STextBlock)
+			.Text(LOCTEXT("NoWorkspaces", "No Workspaces found!"))
+			.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))	
+			.Visibility(this, &SPerforceSourceControlSettings::GetNoWorkspacesVisibility)
+		]
+		+SHorizontalBox::Slot()
+		.FillWidth(1)
+		[
+			SNew(SListView< TSharedRef<FString> >)
+			.ListItemsSource(&Workspaces)
+			.OnGenerateRow(this, &SPerforceSourceControlSettings::OnGenerateWorkspaceRow)
+			.Visibility(this, &SPerforceSourceControlSettings::GetWorkspaceListVisibility)
+			.OnSelectionChanged(this, &SPerforceSourceControlSettings::OnWorkspaceSelected)
+		];
+}
+
+EVisibility SPerforceSourceControlSettings::GetThrobberVisibility() const
+{
+	return State == ESourceControlOperationState::Querying ? EVisibility::Visible : EVisibility::Collapsed;
+}
+
+EVisibility SPerforceSourceControlSettings::GetNoWorkspacesVisibility() const
+{
+	return State == ESourceControlOperationState::Queried && Workspaces.Num() == 0 ? EVisibility::Visible : EVisibility::Collapsed;
+}
+
+EVisibility SPerforceSourceControlSettings::GetWorkspaceListVisibility() const
+{
+	return State == ESourceControlOperationState::Queried && Workspaces.Num() > 0 ? EVisibility::Visible : EVisibility::Collapsed;
+}
+
+TSharedRef<ITableRow> SPerforceSourceControlSettings::OnGenerateWorkspaceRow(TSharedRef<FString> InItem, const TSharedRef<STableViewBase>& OwnerTable)
+{
+	return
+		SNew(SComboRow< TSharedRef<FString> >, OwnerTable)
+		[
+			SNew(SHorizontalBox)
+			+SHorizontalBox::Slot()
+			.FillWidth(1)
+			.Padding(2.0f)
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(*InItem))
+				.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
+			]
+		];
+}
+
+void SPerforceSourceControlSettings::OnWorkspaceSelected(TSharedPtr<FString> InItem, ESelectInfo::Type InSelectInfo)
+{
+	CurrentWorkspace = *InItem;
+	FPerforceSourceControlModule& PerforceSourceControl = FModuleManager::LoadModuleChecked<FPerforceSourceControlModule>( "PerforceSourceControl" );
+	PerforceSourceControl.AccessSettings().SetWorkspace(CurrentWorkspace);
+	PerforceSourceControl.SaveSettings();
+	WorkspaceCombo->SetIsOpen(false);
+}
+
+FText SPerforceSourceControlSettings::OnGetButtonText() const
+{
+	return FText::FromString(CurrentWorkspace);
+}
+
+FReply SPerforceSourceControlSettings::OnCancelWorkspacesRequest()
+{
+	if(GetWorkspacesOperation.IsValid())
 	{
-		// List of files to add to Source Control (.uproject, Config/, Content/, Source/ files and .gitignore/.gitattributes if any)
-		TArray<FString> ProjectFiles;
-		ProjectFiles.Add(FPaths::GetProjectFilePath());
-		ProjectFiles.Add(FPaths::ProjectConfigDir());
-		ProjectFiles.Add(FPaths::ProjectContentDir());
-		if (FPaths::DirectoryExists(FPaths::GameSourceDir()))
-		{
-			ProjectFiles.Add(FPaths::GameSourceDir());
-		}
-		if(bAutoCreateGitIgnore)
-		{
-			// 2.a. Create a standard ".gitignore" file with common patterns for a typical Blueprint & C++ project
-			const FString GitIgnoreFilename = FPaths::Combine(FPaths::ProjectDir(), TEXT(".gitignore"));
-			const FString GitIgnoreContent = TEXT("Binaries\nDerivedDataCache\nIntermediate\nSaved\n.vscode\n.vs\n*.VC.db\n*.opensdf\n*.opendb\n*.sdf\n*.sln\n*.suo\n*.xcodeproj\n*.xcworkspace");
-			if(FFileHelper::SaveStringToFile(GitIgnoreContent, *GitIgnoreFilename, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
-			{
-				ProjectFiles.Add(GitIgnoreFilename);
-			}
-		}
-		if(bAutoCreateReadme)
-		{
-			// 2.b. Create a "README.md" file with a custom description
-			const FString ReadmeFilename = FPaths::Combine(FPaths::ProjectDir(), TEXT("README.md"));
-			if (FFileHelper::SaveStringToFile(ReadmeContent.ToString(), *ReadmeFilename, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
-			{
-				ProjectFiles.Add(ReadmeFilename);
-			}
-		}
-		if(bAutoCreateGitAttributes)
-		{
-			// 2.c. Synchronous (very quick) "lfs install" operation: needs only to be run once by user
-			GitSourceControlUtils::RunCommand(TEXT("lfs install"), PathToGitBinary, PathToProjectDir, TArray<FString>(), TArray<FString>(), InfoMessages, ErrorMessages);
-
-			// 2.d. Create a ".gitattributes" file to enable Git LFS (Large File System) for the whole "Content/" subdir
-			const FString GitAttributesFilename = FPaths::Combine(FPaths::ProjectDir(), TEXT(".gitattributes"));
-			const FString GitAttributesContent = TEXT("Content/** filter=lfs diff=lfs merge=lfs -text\n");
-			if (FFileHelper::SaveStringToFile(GitAttributesContent, *GitAttributesFilename, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
-			{
-				ProjectFiles.Add(GitAttributesFilename);
-			}
-		}
-
-		// 3. Add files to Source Control: launch an asynchronous MarkForAdd operation
-		LaunchMarkForAddOperation(ProjectFiles);
-
-		// 4. The CheckIn will follow, at completion of the MarkForAdd operation
+		ISourceControlModule& SourceControl = FModuleManager::LoadModuleChecked<ISourceControlModule>( "SourceControl" );
+		SourceControl.GetProvider().CancelOperation(GetWorkspacesOperation.ToSharedRef());
 	}
 	return FReply::Handled();
 }
 
-// Launch an asynchronous "MarkForAdd" operation and start an ongoing notification
-void SGitSourceControlSettings::LaunchMarkForAddOperation(const TArray<FString>& InFiles)
+const FSlateBrush* SPerforceSourceControlSettings::GetAdvancedPulldownImage() const
 {
-	FGitSourceControlModule& GitSourceControl = FModuleManager::LoadModuleChecked<FGitSourceControlModule>("GitSourceControl");
-	TSharedRef<FMarkForAdd, ESPMode::ThreadSafe> MarkForAddOperation = ISourceControlOperation::Create<FMarkForAdd>();
-	ECommandResult::Type Result = GitSourceControl.GetProvider().Execute(MarkForAddOperation, InFiles, EConcurrency::Asynchronous, FSourceControlOperationComplete::CreateSP(this, &SGitSourceControlSettings::OnSourceControlOperationComplete));
-	if (Result == ECommandResult::Succeeded)
+	if( ExpanderButton->IsHovered() )
 	{
-		DisplayInProgressNotification(MarkForAddOperation);
+		return bAreAdvancedSettingsExpanded ? FEditorStyle::GetBrush("DetailsView.PulldownArrow.Up.Hovered") : FEditorStyle::GetBrush("DetailsView.PulldownArrow.Down.Hovered");
 	}
 	else
 	{
-		DisplayFailureNotification(MarkForAddOperation);
+		return bAreAdvancedSettingsExpanded ? FEditorStyle::GetBrush("DetailsView.PulldownArrow.Up") : FEditorStyle::GetBrush("DetailsView.PulldownArrow.Down");
 	}
 }
 
-// Launch an asynchronous "CheckIn" operation and start another ongoing notification
-void SGitSourceControlSettings::LaunchCheckInOperation()
+EVisibility SPerforceSourceControlSettings::GetAdvancedSettingsVisibility() const
 {
-	TSharedRef<FCheckIn, ESPMode::ThreadSafe> CheckInOperation = ISourceControlOperation::Create<FCheckIn>();
-	CheckInOperation->SetDescription(InitialCommitMessage);
-	FGitSourceControlModule& GitSourceControl = FModuleManager::LoadModuleChecked<FGitSourceControlModule>("GitSourceControl");
-	ECommandResult::Type Result = GitSourceControl.GetProvider().Execute(CheckInOperation, TArray<FString>(), EConcurrency::Asynchronous, FSourceControlOperationComplete::CreateSP(this, &SGitSourceControlSettings::OnSourceControlOperationComplete));
-	if (Result == ECommandResult::Succeeded)
-	{
-		DisplayInProgressNotification(CheckInOperation);
-	}
-	else
-	{
-		DisplayFailureNotification(CheckInOperation);
-	}
+	return bAreAdvancedSettingsExpanded ? EVisibility::Visible : EVisibility::Collapsed;
 }
 
-/// Delegate called when a source control operation has completed: launch the next one and manage notifications
-void SGitSourceControlSettings::OnSourceControlOperationComplete(const FSourceControlOperationRef& InOperation, ECommandResult::Type InResult)
+FReply SPerforceSourceControlSettings::OnAdvancedSettingsClicked()
 {
-	RemoveInProgressNotification();
-
-	// Report result with a notification
-	if (InResult == ECommandResult::Succeeded)
-	{
-		DisplaySuccessNotification(InOperation);
-	}
-	else
-	{
-		DisplayFailureNotification(InOperation);
-	}
-
-	if ((InOperation->GetName() == "MarkForAdd") && (InResult == ECommandResult::Succeeded) && bAutoInitialCommit)
-	{
-		// 4. optional initial Asynchronous commit with custom message: launch a "CheckIn" Operation
-		LaunchCheckInOperation();
-	}
-}
-
-
-// Display an ongoing notification during the whole operation
-void SGitSourceControlSettings::DisplayInProgressNotification(const FSourceControlOperationRef& InOperation)
-{
-	FNotificationInfo Info(InOperation->GetInProgressString());
-	Info.bFireAndForget = false;
-	Info.ExpireDuration = 0.0f;
-	Info.FadeOutDuration = 1.0f;
-	OperationInProgressNotification = FSlateNotificationManager::Get().AddNotification(Info);
-	if (OperationInProgressNotification.IsValid())
-	{
-		OperationInProgressNotification.Pin()->SetCompletionState(SNotificationItem::CS_Pending);
-	}
-}
-
-// Remove the ongoing notification at the end of the operation
-void SGitSourceControlSettings::RemoveInProgressNotification()
-{
-	if (OperationInProgressNotification.IsValid())
-	{
-		OperationInProgressNotification.Pin()->ExpireAndFadeout();
-		OperationInProgressNotification.Reset();
-	}
-}
-
-// Display a temporary success notification at the end of the operation
-void SGitSourceControlSettings::DisplaySuccessNotification(const FSourceControlOperationRef& InOperation)
-{
-	const FText NotificationText = FText::Format(LOCTEXT("InitialCommit_Success", "{0} operation was successfull!"), FText::FromName(InOperation->GetName()));
-	FNotificationInfo Info(NotificationText);
-	Info.bUseSuccessFailIcons = true;
-	Info.Image = FEditorStyle::GetBrush(TEXT("NotificationList.SuccessImage"));
-	FSlateNotificationManager::Get().AddNotification(Info);
-}
-
-// Display a temporary failure notification at the end of the operation
-void SGitSourceControlSettings::DisplayFailureNotification(const FSourceControlOperationRef& InOperation)
-{
-	const FText NotificationText = FText::Format(LOCTEXT("InitialCommit_Failure", "Error: {0} operation failed!"), FText::FromName(InOperation->GetName()));
-	FNotificationInfo Info(NotificationText);
-	Info.ExpireDuration = 8.0f;
-	FSlateNotificationManager::Get().AddNotification(Info);
-}
-
-void SGitSourceControlSettings::OnCheckedCreateGitIgnore(ECheckBoxState NewCheckedState)
-{
-	bAutoCreateGitIgnore = (NewCheckedState == ECheckBoxState::Checked);
-}
-
-void SGitSourceControlSettings::OnCheckedCreateReadme(ECheckBoxState NewCheckedState)
-{
-	bAutoCreateReadme = (NewCheckedState == ECheckBoxState::Checked);
-}
-
-bool SGitSourceControlSettings::GetAutoCreateReadme() const
-{
-	return bAutoCreateReadme;
-}
-
-void SGitSourceControlSettings::OnReadmeContentCommited(const FText& InText, ETextCommit::Type InCommitType)
-{
-	ReadmeContent = InText;
-}
-
-FText SGitSourceControlSettings::GetReadmeContent() const
-{
-	return ReadmeContent;
-}
-
-void SGitSourceControlSettings::OnCheckedCreateGitAttributes(ECheckBoxState NewCheckedState)
-{
-	bAutoCreateGitAttributes = (NewCheckedState == ECheckBoxState::Checked);
-}
-
-void SGitSourceControlSettings::OnCheckedInitialCommit(ECheckBoxState NewCheckedState)
-{
-	bAutoInitialCommit = (NewCheckedState == ECheckBoxState::Checked);
-}
-
-void SGitSourceControlSettings::OnInitialCommitMessageCommited(const FText& InText, ETextCommit::Type InCommitType)
-{
-	InitialCommitMessage = InText;
-}
-
-FText SGitSourceControlSettings::GetInitialCommitMessage() const
-{
-	return InitialCommitMessage;
-}
-
-void SGitSourceControlSettings::OnRemoteUrlCommited(const FText& InText, ETextCommit::Type InCommitType)
-{
-	RemoteUrl = InText;
-}
-
-FText SGitSourceControlSettings::GetRemoteUrl() const
-{
-	return RemoteUrl;
+	bAreAdvancedSettingsExpanded = !bAreAdvancedSettingsExpanded;
+	return FReply::Handled();
 }
 
 #undef LOCTEXT_NAMESPACE

@@ -1,59 +1,74 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
-#include "GitSourceControlModule.h"
+#include "PerforceSourceControlModule.h"
 #include "Misc/App.h"
-#include "Modules/ModuleManager.h"
-#include "GitSourceControlOperations.h"
+#include "PerforceSourceControlOperations.h"
 #include "Features/IModularFeatures.h"
 
-#define LOCTEXT_NAMESPACE "GitSourceControl"
+#define LOCTEXT_NAMESPACE "PerforceSourceControl"
 
 template<typename Type>
-static TSharedRef<IGitSourceControlWorker, ESPMode::ThreadSafe> CreateWorker()
+static TSharedRef<IPerforceSourceControlWorker, ESPMode::ThreadSafe> CreateWorker()
 {
 	return MakeShareable( new Type() );
 }
 
-void FGitSourceControlModule::StartupModule()
+void FPerforceSourceControlModule::StartupModule()
 {
 	// Register our operations
-	GitSourceControlProvider.RegisterWorker( "Connect", FGetGitSourceControlWorker::CreateStatic( &CreateWorker<FGitConnectWorker> ) );
-	// Note: this provider does not uses the "CheckOut" command, which is a Perforce "lock", as Git has no lock command (all tracked files in the working copy are always already checked-out).
-	GitSourceControlProvider.RegisterWorker( "UpdateStatus", FGetGitSourceControlWorker::CreateStatic( &CreateWorker<FGitUpdateStatusWorker> ) );
-	GitSourceControlProvider.RegisterWorker( "MarkForAdd", FGetGitSourceControlWorker::CreateStatic( &CreateWorker<FGitMarkForAddWorker> ) );
-	GitSourceControlProvider.RegisterWorker( "Delete", FGetGitSourceControlWorker::CreateStatic( &CreateWorker<FGitDeleteWorker> ) );
-	GitSourceControlProvider.RegisterWorker( "Revert", FGetGitSourceControlWorker::CreateStatic( &CreateWorker<FGitRevertWorker> ) );
-	GitSourceControlProvider.RegisterWorker( "Sync", FGetGitSourceControlWorker::CreateStatic( &CreateWorker<FGitSyncWorker> ) );
-	GitSourceControlProvider.RegisterWorker( "CheckIn", FGetGitSourceControlWorker::CreateStatic( &CreateWorker<FGitCheckInWorker> ) );
-	GitSourceControlProvider.RegisterWorker( "Copy", FGetGitSourceControlWorker::CreateStatic( &CreateWorker<FGitCopyWorker> ) );
-	GitSourceControlProvider.RegisterWorker( "Resolve", FGetGitSourceControlWorker::CreateStatic( &CreateWorker<FGitResolveWorker> ) );
+	PerforceSourceControlProvider.RegisterWorker( "Connect", FGetPerforceSourceControlWorker::CreateStatic( &CreateWorker<FPerforceConnectWorker> ) );
+	PerforceSourceControlProvider.RegisterWorker( "CheckOut", FGetPerforceSourceControlWorker::CreateStatic( &CreateWorker<FPerforceCheckOutWorker> ) );
+	PerforceSourceControlProvider.RegisterWorker( "UpdateStatus", FGetPerforceSourceControlWorker::CreateStatic( &CreateWorker<FPerforceUpdateStatusWorker> ) );
+	PerforceSourceControlProvider.RegisterWorker( "MarkForAdd", FGetPerforceSourceControlWorker::CreateStatic( &CreateWorker<FPerforceMarkForAddWorker> ) );
+	PerforceSourceControlProvider.RegisterWorker( "Delete", FGetPerforceSourceControlWorker::CreateStatic( &CreateWorker<FPerforceDeleteWorker> ) );
+	PerforceSourceControlProvider.RegisterWorker( "Revert", FGetPerforceSourceControlWorker::CreateStatic( &CreateWorker<FPerforceRevertWorker> ) );
+	PerforceSourceControlProvider.RegisterWorker( "Sync", FGetPerforceSourceControlWorker::CreateStatic( &CreateWorker<FPerforceSyncWorker> ) );
+	PerforceSourceControlProvider.RegisterWorker( "CheckIn", FGetPerforceSourceControlWorker::CreateStatic( &CreateWorker<FPerforceCheckInWorker> ) );
+	PerforceSourceControlProvider.RegisterWorker( "GetWorkspaces", FGetPerforceSourceControlWorker::CreateStatic( &CreateWorker<FPerforceGetWorkspacesWorker> ) );
+	PerforceSourceControlProvider.RegisterWorker( "Copy", FGetPerforceSourceControlWorker::CreateStatic( &CreateWorker<FPerforceCopyWorker> ) );
+	PerforceSourceControlProvider.RegisterWorker( "Resolve", FGetPerforceSourceControlWorker::CreateStatic( &CreateWorker<FPerforceResolveWorker> ) );
+	PerforceSourceControlProvider.RegisterWorker( "ChangeStatus", FGetPerforceSourceControlWorker::CreateStatic( &CreateWorker<FPerforceChangeStatusWorker> ) );
 
 	// load our settings
-	GitSourceControlSettings.LoadSettings();
+	PerforceSourceControlSettings.LoadSettings();
 
 	// Bind our source control provider to the editor
-	IModularFeatures::Get().RegisterModularFeature( "SourceControl", &GitSourceControlProvider );
+	IModularFeatures::Get().RegisterModularFeature( "SourceControl", &PerforceSourceControlProvider );
 }
 
-void FGitSourceControlModule::ShutdownModule()
+void FPerforceSourceControlModule::ShutdownModule()
 {
 	// shut down the provider, as this module is going away
-	GitSourceControlProvider.Close();
+	PerforceSourceControlProvider.Close();
 
 	// unbind provider from editor
-	IModularFeatures::Get().UnregisterModularFeature("SourceControl", &GitSourceControlProvider);
+	IModularFeatures::Get().UnregisterModularFeature( "SourceControl", &PerforceSourceControlProvider );
 }
 
-void FGitSourceControlModule::SaveSettings()
+FPerforceSourceControlSettings& FPerforceSourceControlModule::AccessSettings()
+{
+	return PerforceSourceControlSettings;
+}
+
+void FPerforceSourceControlModule::SaveSettings()
 {
 	if (FApp::IsUnattended() || IsRunningCommandlet())
 	{
 		return;
 	}
 
-	GitSourceControlSettings.SaveSettings();
+	PerforceSourceControlSettings.SaveSettings();
 }
 
-IMPLEMENT_MODULE(FGitSourceControlModule, GitSourceControl);
+void FPerforceSourceControlModule::SetLastErrors(const TArray<FText>& InErrors)
+{
+	FPerforceSourceControlModule* Module = FModuleManager::GetModulePtr<FPerforceSourceControlModule>("PerforceSourceControl");
+	if (Module)
+	{
+		Module->GetProvider().SetLastErrors(InErrors);
+	}
+}
+
+IMPLEMENT_MODULE(FPerforceSourceControlModule, PerforceSourceControl);
 
 #undef LOCTEXT_NAMESPACE

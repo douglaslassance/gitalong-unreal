@@ -5,12 +5,14 @@
 #include "CoreMinimal.h"
 #include "ISourceControlRevision.h"
 
-/** Revision of a file, linked to a specific commit */
-class FGitSourceControlRevision : public ISourceControlRevision, public TSharedFromThis<FGitSourceControlRevision, ESPMode::ThreadSafe>
+class FPerforceSourceControlRevision : public ISourceControlRevision, public TSharedFromThis<FPerforceSourceControlRevision, ESPMode::ThreadSafe>
 {
 public:
-	FGitSourceControlRevision()
+	FPerforceSourceControlRevision()
 		: RevisionNumber(0)
+		, Date(0)
+		, ChangelistNumber(0)
+		, FileSize(0)
 	{
 	}
 
@@ -25,49 +27,42 @@ public:
 	virtual const FString& GetUserName() const override;
 	virtual const FString& GetClientSpec() const override;
 	virtual const FString& GetAction() const override;
-	virtual TSharedPtr<class ISourceControlRevision, ESPMode::ThreadSafe> GetBranchSource() const override;
+	virtual TSharedPtr<ISourceControlRevision, ESPMode::ThreadSafe> GetBranchSource() const override;
 	virtual const FDateTime& GetDate() const override;
 	virtual int32 GetCheckInIdentifier() const override;
 	virtual int32 GetFileSize() const override;
 
 public:
+	/** The local filename the this revision refers to */
+	FString FileName;
 
-	/** The filename this revision refers to */
-	FString Filename;
-
-	/** The full hexadecimal SHA1 id of the commit this revision refers to */
-	FString CommitId;
-
-	/** The short hexadecimal SHA1 id (8 first hex char out of 40) of the commit: the string to display */
-	FString ShortCommitId;
-
-	/** The numeric value of the short SHA1 (8 first hex char out of 40) */
-	int32 CommitIdNumber;
-
-	/** The index of the revision in the history (SBlueprintRevisionMenu assumes order for the "Depot" label) */
+	/** The revision number of this file */
 	int32 RevisionNumber;
 
-	/** The SHA1 identifier of the file at this revision */
-	FString FileHash;
+	/** The revision to display to the user */
+	FString Revision;
 
-	/** The description of this revision */
+	/** The changelist description of this revision */
 	FString Description;
 
-	/** The user that made the change */
+	/** THe user that made the change for this revision */
 	FString UserName;
 
-	/** The action (add, edit, branch etc.) performed at this revision */
+	/** The workspace the change was made from */
+	FString ClientSpec;
+
+	/** The action (edit, add etc.) that was performed for at this revision */
 	FString Action;
 
-	/** Source of move ("branch" in Perforce term) if any */
-	TSharedPtr<FGitSourceControlRevision, ESPMode::ThreadSafe> BranchSource;
+	/** Source of branch, if any */
+	TSharedPtr<FPerforceSourceControlRevision, ESPMode::ThreadSafe> BranchSource;
 
-	/** The date this revision was made */
+	/** The date of this revision */
 	FDateTime Date;
 
-	/** The size of the file at this revision */
+	/** The changelist number of this revision */
+	int32 ChangelistNumber;
+
+	/** The size of the change */
 	int32 FileSize;
 };
-
-/** History composed of the last 100 revisions of the file */
-typedef TArray< TSharedRef<FGitSourceControlRevision, ESPMode::ThreadSafe> >	TGitSourceControlHistory;

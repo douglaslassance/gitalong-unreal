@@ -1,34 +1,36 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
-#include "GitSourceControlState.h"
+#include "PerforceSourceControlState.h"
+#include "PerforceSourceControlRevision.h"
+#include "Misc/EngineVersion.h"
 
-#define LOCTEXT_NAMESPACE "GitSourceControl.State"
+#define LOCTEXT_NAMESPACE "PerforceSourceControl.State"
 
-int32 FGitSourceControlState::GetHistorySize() const
+int32 FPerforceSourceControlState::GetHistorySize() const
 {
 	return History.Num();
 }
 
-TSharedPtr<class ISourceControlRevision, ESPMode::ThreadSafe> FGitSourceControlState::GetHistoryItem( int32 HistoryIndex ) const
+TSharedPtr<class ISourceControlRevision, ESPMode::ThreadSafe> FPerforceSourceControlState::GetHistoryItem( int32 HistoryIndex ) const
 {
 	check(History.IsValidIndex(HistoryIndex));
 	return History[HistoryIndex];
 }
 
-TSharedPtr<class ISourceControlRevision, ESPMode::ThreadSafe> FGitSourceControlState::FindHistoryRevision( int32 RevisionNumber ) const
+TSharedPtr<class ISourceControlRevision, ESPMode::ThreadSafe> FPerforceSourceControlState::FindHistoryRevision( int32 RevisionNumber ) const
 {
-	for(const auto& Revision : History)
+	for(auto Iter(History.CreateConstIterator()); Iter; Iter++)
 	{
-		if(Revision->GetRevisionNumber() == RevisionNumber)
+		if((*Iter)->GetRevisionNumber() == RevisionNumber)
 		{
-			return Revision;
+			return *Iter;
 		}
 	}
 
-	return nullptr;
+	return NULL;
 }
 
-TSharedPtr<class ISourceControlRevision, ESPMode::ThreadSafe> FGitSourceControlState::FindHistoryRevision(const FString& InRevision) const
+TSharedPtr<class ISourceControlRevision, ESPMode::ThreadSafe> FPerforceSourceControlState::FindHistoryRevision(const FString& InRevision) const
 {
 	for(const auto& Revision : History)
 	{
@@ -38,253 +40,341 @@ TSharedPtr<class ISourceControlRevision, ESPMode::ThreadSafe> FGitSourceControlS
 		}
 	}
 
-	return nullptr;
+	return NULL;
 }
 
-TSharedPtr<class ISourceControlRevision, ESPMode::ThreadSafe> FGitSourceControlState::GetBaseRevForMerge() const
+
+bool FPerforceSourceControlState::IsCheckedOutInOtherBranch(const FString& CurrentBranch) const
 {
-	for(const auto& Revision : History)
+	return (CheckedOutBranches.Num() > 0 && !CheckedOutBranches.Contains(CurrentBranch.Len() ? CurrentBranch : FEngineVersion::Current().GetBranch()));
+}
+
+bool FPerforceSourceControlState::IsModifiedInOtherBranch(const FString& CurrentBranch) const
+{
+	return !HeadBranch.IsEmpty() && (HeadBranch != TEXT("*CurrentBranch")) && ( HeadBranch != (CurrentBranch.Len() ? CurrentBranch : FEngineVersion::Current().GetBranch()));
+}
+
+bool FPerforceSourceControlState::GetOtherBranchHeadModification(FString& HeadBranchOut, FString& ActionOut, int32& HeadChangeListOut) const
+{
+	if (HeadBranch == TEXT("*CurrentBranch"))
 	{
-		// look for the the SHA1 id of the file, not the commit id (revision)
-		if(Revision->FileHash == PendingMergeBaseFileHash)
+		return false;
+	}
+
+	HeadBranchOut = HeadBranch;
+	ActionOut = HeadAction;
+	HeadChangeListOut = HeadChangeList;
+	
+	return !HeadBranchOut.IsEmpty();
+}
+
+TSharedPtr<class ISourceControlRevision, ESPMode::ThreadSafe> FPerforceSourceControlState::GetBaseRevForMerge() const
+{
+	if( PendingResolveRevNumber == INVALID_REVISION )
+	{
+		return NULL;
+	}
+
+	return FindHistoryRevision(PendingResolveRevNumber);
+}
+
+FName FPerforceSourceControlState::GetIconName() const
+{
+	if( !IsCurrent() )
+	{
+		return FName("Perforce.NotAtHeadRevision");
+	}
+	else if (State != EPerforceState::CheckedOut && State != EPerforceState::CheckedOutOther)
+	{
+		if (IsCheckedOutInOtherBranch())
 		{
-			return Revision;
+			return FName("Perforce.CheckedOutByOtherUserOtherBranch");
+		}
+
+		if (IsModifiedInOtherBranch())
+		{
+			return FName("Perforce.ModifiedOtherBranch");
 		}
 	}
 
-	return nullptr;
+
+	switch(State)
+	{
+	default:
+	case EPerforceState::DontCare:
+		return NAME_None;
+	case EPerforceState::CheckedOut:
+		return FName("Perforce.CheckedOut");
+	case EPerforceState::ReadOnly:
+		return NAME_None;
+	case EPerforceState::NotInDepot:
+		return FName("Perforce.NotInDepot");
+	case EPerforceState::CheckedOutOther:
+		return FName("Perforce.CheckedOutByOtherUser");
+	case EPerforceState::Ignore:
+		return NAME_None;
+	case EPerforceState::OpenForAdd:
+		return FName("Perforce.OpenForAdd");
+	case EPerforceState::MarkedForDelete:
+		return FName("Perforce.MarkedForDelete");
+	case EPerforceState::Branched:
+		return FName("Perforce.Branched");
+	}
 }
 
-// @todo add Slate icons for git specific states (NotAtHead vs Conflicted...)
-FName FGitSourceControlState::GetIconName() const
+FName FPerforceSourceControlState::GetSmallIconName() const
 {
-	switch(WorkingCopyState)
+	if( !IsCurrent() )
 	{
-	case EWorkingCopyState::Modified:
-		return FName("Subversion.CheckedOut");
-	case EWorkingCopyState::Added:
-		return FName("Subversion.OpenForAdd");
-	case EWorkingCopyState::Renamed:
-	case EWorkingCopyState::Copied:
-		return FName("Subversion.Branched");
-	case EWorkingCopyState::Deleted: // Deleted & Missing files does not show in Content Browser
-	case EWorkingCopyState::Missing:
-		return FName("Subversion.MarkedForDelete");
-	case EWorkingCopyState::Conflicted:
-		return FName("Subversion.NotAtHeadRevision");
-	case EWorkingCopyState::NotControlled:
-		return FName("Subversion.NotInDepot");
-	case EWorkingCopyState::Unknown:
-	case EWorkingCopyState::Unchanged: // Unchanged is the same as "Pristine" (not checked out) for Perforce, ie no icon
-	case EWorkingCopyState::Ignored:
-	default:
-		return NAME_None;
+		return FName("Perforce.NotAtHeadRevision_Small");
+	}
+	else if (State != EPerforceState::CheckedOut && State != EPerforceState::CheckedOutOther)
+	{
+		if (IsCheckedOutInOtherBranch())
+		{
+			return FName("Perforce.CheckedOutByOtherUserOtherBranch_Small");
+		}
+
+		if (IsModifiedInOtherBranch())
+		{
+			return FName("Perforce.ModifiedOtherBranch_Small");
+		}
 	}
 
-	return NAME_None;
+
+	switch(State)
+	{
+	default:
+	case EPerforceState::DontCare:
+		return NAME_None;
+	case EPerforceState::CheckedOut:
+		return FName("Perforce.CheckedOut_Small");
+	case EPerforceState::ReadOnly:
+		return NAME_None;
+	case EPerforceState::NotInDepot:
+		return FName("Perforce.NotInDepot_Small");
+	case EPerforceState::CheckedOutOther:
+		return FName("Perforce.CheckedOutByOtherUser_Small");
+	case EPerforceState::Ignore:
+		return NAME_None;
+	case EPerforceState::OpenForAdd:
+		return FName("Perforce.OpenForAdd_Small");
+	case EPerforceState::MarkedForDelete:
+		return FName("Perforce.MarkedForDelete_Small");
+	case EPerforceState::Branched:
+		return FName("Perforce.Branched_Small");
+	}
 }
 
-FName FGitSourceControlState::GetSmallIconName() const
+FText FPerforceSourceControlState::GetDisplayName() const
 {
-	switch(WorkingCopyState)
+	if( IsConflicted() )
 	{
-	case EWorkingCopyState::Modified:
-		return FName("Subversion.CheckedOut_Small");
-	case EWorkingCopyState::Added:
-		return FName("Subversion.OpenForAdd_Small");
-	case EWorkingCopyState::Renamed:
-	case EWorkingCopyState::Copied:
-		return FName("Subversion.Branched_Small");
-	case EWorkingCopyState::Deleted: // Deleted & Missing files can appear in the Submit to Source Control window
-	case EWorkingCopyState::Missing:
-		return FName("Subversion.MarkedForDelete_Small");
-	case EWorkingCopyState::Conflicted:
-		return FName("Subversion.NotAtHeadRevision_Small");
-	case EWorkingCopyState::NotControlled:
-		return FName("Subversion.NotInDepot_Small");
-	case EWorkingCopyState::Unknown:
-	case EWorkingCopyState::Unchanged: // Unchanged is the same as "Pristine" (not checked out) for Perforce, ie no icon
-	case EWorkingCopyState::Ignored:
-	default:
-		return NAME_None;
+		return LOCTEXT("Conflicted", "Conflicted");
+	}
+	else if( !IsCurrent() )
+	{
+		return LOCTEXT("NotCurrent", "Not current");
+	}
+	else if (State != EPerforceState::CheckedOut && State != EPerforceState::CheckedOutOther)
+	{
+		if (IsCheckedOutInOtherBranch())
+		{
+			return FText::Format(LOCTEXT("CheckedOutOther", "Checked out by: {0}"), FText::FromString(OtherUserBranchCheckedOuts));
+		}
+
+		if (IsModifiedInOtherBranch())
+		{
+			return FText::Format(LOCTEXT("ModifiedOtherBranch", "Modified in branch: {0}"), FText::FromString(HeadBranch));
+		}
 	}
 
-	return NAME_None;
-}
-
-FText FGitSourceControlState::GetDisplayName() const
-{
-	switch(WorkingCopyState)
+	switch(State)
 	{
-	case EWorkingCopyState::Unknown:
+	default:
+	case EPerforceState::DontCare:
 		return LOCTEXT("Unknown", "Unknown");
-	case EWorkingCopyState::Unchanged:
-		return LOCTEXT("Unchanged", "Unchanged");
-	case EWorkingCopyState::Added:
-		return LOCTEXT("Added", "Added");
-	case EWorkingCopyState::Deleted:
-		return LOCTEXT("Deleted", "Deleted");
-	case EWorkingCopyState::Modified:
-		return LOCTEXT("Modified", "Modified");
-	case EWorkingCopyState::Renamed:
-		return LOCTEXT("Renamed", "Renamed");
-	case EWorkingCopyState::Copied:
-		return LOCTEXT("Copied", "Copied");
-	case EWorkingCopyState::Conflicted:
-		return LOCTEXT("ContentsConflict", "Contents Conflict");
-	case EWorkingCopyState::Ignored:
-		return LOCTEXT("Ignored", "Ignored");
-	case EWorkingCopyState::NotControlled:
-		return LOCTEXT("NotControlled", "Not Under Source Control");
-	case EWorkingCopyState::Missing:
-		return LOCTEXT("Missing", "Missing");
+	case EPerforceState::CheckedOut:
+		return LOCTEXT("CheckedOut", "Checked out");
+	case EPerforceState::ReadOnly:
+		return LOCTEXT("ReadOnly", "Read only");
+	case EPerforceState::NotInDepot:
+		return LOCTEXT("NotInDepot", "Not in depot");
+	case EPerforceState::CheckedOutOther:
+		return FText::Format( LOCTEXT("CheckedOutOther", "Checked out by: {0}"), FText::FromString(OtherUserCheckedOut) );
+	case EPerforceState::Ignore:
+		return LOCTEXT("Ignore", "Ignore");
+	case EPerforceState::OpenForAdd:
+		return LOCTEXT("OpenedForAdd", "Opened for add");
+	case EPerforceState::MarkedForDelete:
+		return LOCTEXT("MarkedForDelete", "Marked for delete");
+	case EPerforceState::Branched:
+		return LOCTEXT("Branched", "Branched");
 	}
-
-	return FText();
 }
 
-FText FGitSourceControlState::GetDisplayTooltip() const
+FText FPerforceSourceControlState::GetDisplayTooltip() const
 {
-	switch(WorkingCopyState)
+	if (IsConflicted())
 	{
-	case EWorkingCopyState::Unknown:
-		return LOCTEXT("Unknown_Tooltip", "Unknown source control state");
-	case EWorkingCopyState::Unchanged:
-		return LOCTEXT("Pristine_Tooltip", "There are no modifications");
-	case EWorkingCopyState::Added:
-		return LOCTEXT("Added_Tooltip", "Item is scheduled for addition");
-	case EWorkingCopyState::Deleted:
-		return LOCTEXT("Deleted_Tooltip", "Item is scheduled for deletion");
-	case EWorkingCopyState::Modified:
-		return LOCTEXT("Modified_Tooltip", "Item has been modified");
-	case EWorkingCopyState::Renamed:
-		return LOCTEXT("Renamed_Tooltip", "Item has been renamed");
-	case EWorkingCopyState::Copied:
-		return LOCTEXT("Copied_Tooltip", "Item has been copied");
-	case EWorkingCopyState::Conflicted:
-		return LOCTEXT("ContentsConflict_Tooltip", "The contents of the item conflict with updates received from the repository.");
-	case EWorkingCopyState::Ignored:
-		return LOCTEXT("Ignored_Tooltip", "Item is being ignored.");
-	case EWorkingCopyState::NotControlled:
-		return LOCTEXT("NotControlled_Tooltip", "Item is not under version control.");
-	case EWorkingCopyState::Missing:
-		return LOCTEXT("Missing_Tooltip", "Item is missing (e.g., you moved or deleted it without using Git). This also indicates that a directory is incomplete (a checkout or update was interrupted).");
+		return LOCTEXT("Conflicted_Tooltip", "The files(s) have local changes that need to be resolved with changes submitted to the Perforce depot");
+	}
+	else if( !IsCurrent() )
+	{
+		return LOCTEXT("NotCurrent_Tooltip", "The file(s) are not at the head revision");
+	}
+	else if (State != EPerforceState::CheckedOut && State != EPerforceState::CheckedOutOther)
+	{
+		if (IsCheckedOutInOtherBranch())
+		{
+			return FText::Format(LOCTEXT("CheckedOutOther_Tooltip", "Checked out by: {0}"), FText::FromString(GetOtherUserBranchCheckedOuts()));
+		}
+		else if (IsModifiedInOtherBranch())
+		{
+			FNumberFormattingOptions NoCommas;
+			NoCommas.UseGrouping = false;
+			return FText::Format(LOCTEXT("ModifiedOtherBranch_Tooltip", "Modified in branch: {0} CL:{1} ({2})"), FText::FromString(HeadBranch), FText::AsNumber(HeadChangeList, &NoCommas), FText::FromString(HeadAction));
+		}
 	}
 
-	return FText();
+	switch(State)
+	{
+	default:
+	case EPerforceState::DontCare:
+		return LOCTEXT("Unknown_Tooltip", "The file(s) status is unknown");
+	case EPerforceState::CheckedOut:
+		return LOCTEXT("CheckedOut_Tooltip", "The file(s) are checked out");
+	case EPerforceState::ReadOnly:
+		return LOCTEXT("ReadOnly_Tooltip", "The file(s) are marked locally as read-only");
+	case EPerforceState::NotInDepot:
+		return LOCTEXT("NotInDepot_Tooltip", "The file(s) are not present in the Perforce depot");
+	case EPerforceState::CheckedOutOther:
+		return FText::Format( LOCTEXT("CheckedOutOther_Tooltip", "Checked out by: {0}"), FText::FromString(OtherUserCheckedOut) );
+	case EPerforceState::Ignore:
+		return LOCTEXT("Ignore_Tooltip", "The file(s) are ignored by Perforce");
+	case EPerforceState::OpenForAdd:
+		return LOCTEXT("OpenedForAdd_Tooltip", "The file(s) are opened for add");
+	case EPerforceState::MarkedForDelete:
+		return LOCTEXT("MarkedForDelete_Tooltip", "The file(s) are marked for delete");
+	case EPerforceState::Branched:
+		return LOCTEXT("Branched_Tooltip", "The file(s) are opened for branching");
+	}
 }
 
-const FString& FGitSourceControlState::GetFilename() const
+const FString& FPerforceSourceControlState::GetFilename() const
 {
 	return LocalFilename;
 }
 
-const FDateTime& FGitSourceControlState::GetTimeStamp() const
+const FDateTime& FPerforceSourceControlState::GetTimeStamp() const
 {
 	return TimeStamp;
 }
 
-// Deleted and Missing assets cannot appear in the Content Browser, but the do in the Submit files to Source Control window!
-bool FGitSourceControlState::CanCheckIn() const
+bool FPerforceSourceControlState::CanCheckIn() const
 {
-	return WorkingCopyState == EWorkingCopyState::Added
-		|| WorkingCopyState == EWorkingCopyState::Deleted
-		|| WorkingCopyState == EWorkingCopyState::Missing
-		|| WorkingCopyState == EWorkingCopyState::Modified
-		|| WorkingCopyState == EWorkingCopyState::Renamed;
+	return ( (State == EPerforceState::CheckedOut) 
+			|| (State == EPerforceState::OpenForAdd) 
+			|| (State == EPerforceState::MarkedForDelete)
+			|| (State == EPerforceState::Branched) )
+		&& !IsConflicted() && IsCurrent();
 }
 
-bool FGitSourceControlState::CanCheckout() const
+bool FPerforceSourceControlState::CanCheckout() const
 {
-	return false; // With Git all tracked files in the working copy are always already checked-out (as opposed to Perforce)
+	bool bCanDoCheckout = false;
+
+	const bool bIsInP4NotCheckedOut = State == EPerforceState::ReadOnly;
+	if (!bBinary && !bExclusiveCheckout)
+	{
+		// Notice that we don't care whether we're up to date. User can perform textual
+		// merge via P4V:
+		const bool bIsCheckedOutElseWhere = State == EPerforceState::CheckedOutOther;
+		bCanDoCheckout =	bIsInP4NotCheckedOut ||
+							bIsCheckedOutElseWhere;
+	}
+	else
+	{
+		// For assets that are either binary or textual but marked for exclusive checkout
+		// we only want to permit check out when we are at head:
+		bCanDoCheckout = bIsInP4NotCheckedOut && IsCurrent();
+	}
+
+	return bCanDoCheckout;
 }
 
-bool FGitSourceControlState::IsCheckedOut() const
+bool FPerforceSourceControlState::IsCheckedOut() const
 {
-	return IsSourceControlled(); // With Git all tracked files in the working copy are always checked-out (as opposed to Perforce)
+	return State == EPerforceState::CheckedOut;
 }
 
-bool FGitSourceControlState::IsCheckedOutOther(FString* Who) const
+bool FPerforceSourceControlState::IsCheckedOutOther(FString* Who) const
 {
-	return false; // Git does not lock checked-out files as Perforce does
+	if(Who != NULL)
+	{
+		*Who = OtherUserCheckedOut;
+	}
+	return State == EPerforceState::CheckedOutOther;
 }
 
-bool FGitSourceControlState::IsCurrent() const
+bool FPerforceSourceControlState::IsCurrent() const
 {
-	return true; // @todo check the state of the HEAD versus the state of tracked branch on remote
+	return LocalRevNumber == DepotRevNumber;
 }
 
-bool FGitSourceControlState::IsSourceControlled() const
+bool FPerforceSourceControlState::IsSourceControlled() const
 {
-	return WorkingCopyState != EWorkingCopyState::NotControlled && WorkingCopyState != EWorkingCopyState::Ignored && WorkingCopyState != EWorkingCopyState::Unknown;
+	return State != EPerforceState::NotInDepot && State != EPerforceState::NotUnderClientRoot;
 }
 
-bool FGitSourceControlState::IsAdded() const
+bool FPerforceSourceControlState::IsAdded() const
 {
-	return WorkingCopyState == EWorkingCopyState::Added;
+	return State == EPerforceState::OpenForAdd;
 }
 
-bool FGitSourceControlState::IsDeleted() const
+bool FPerforceSourceControlState::IsDeleted() const
 {
-	return WorkingCopyState == EWorkingCopyState::Deleted || WorkingCopyState == EWorkingCopyState::Missing;
+	return State == EPerforceState::MarkedForDelete;
 }
 
-bool FGitSourceControlState::IsIgnored() const
+bool FPerforceSourceControlState::IsIgnored() const
 {
-	return WorkingCopyState == EWorkingCopyState::Ignored;
+	return State == EPerforceState::Ignore;
 }
 
-bool FGitSourceControlState::CanEdit() const
+bool FPerforceSourceControlState::CanEdit() const
 {
-	return true; // With Git all files in the working copy are always editable (as opposed to Perforce)
+	return State == EPerforceState::CheckedOut || State == EPerforceState::OpenForAdd || State == EPerforceState::Branched;
 }
 
-bool FGitSourceControlState::CanDelete() const
+bool FPerforceSourceControlState::CanDelete() const
 {
-	return IsSourceControlled() && IsCurrent();
+	return !IsCheckedOutOther() && IsSourceControlled() && IsCurrent();
 }
 
-bool FGitSourceControlState::IsUnknown() const
+bool FPerforceSourceControlState::IsUnknown() const
 {
-	return WorkingCopyState == EWorkingCopyState::Unknown;
+	return State == EPerforceState::DontCare;
 }
 
-bool FGitSourceControlState::IsModified() const
+bool FPerforceSourceControlState::IsModified() const
 {
-	// Warning: for Perforce, a checked-out file is locked for modification (whereas with Git all tracked files are checked-out),
-	// so for a clean "check-in" (commit) checked-out files unmodified should be removed from the changeset (the index)
-	// http://stackoverflow.com/questions/12357971/what-does-revert-unchanged-files-mean-in-perforce
-	//
-	// Thus, before check-in UE4 Editor call RevertUnchangedFiles() in PromptForCheckin() and CheckinFiles().
-	//
-	// So here we must take care to enumerate all states that need to be commited,
-	// all other will be discarded :
-	//  - Unknown
-	//  - Unchanged
-	//  - NotControlled
-	//  - Ignored
-	return WorkingCopyState == EWorkingCopyState::Added
-		|| WorkingCopyState == EWorkingCopyState::Deleted
-		|| WorkingCopyState == EWorkingCopyState::Modified
-		|| WorkingCopyState == EWorkingCopyState::Renamed
-		|| WorkingCopyState == EWorkingCopyState::Copied
-		|| WorkingCopyState == EWorkingCopyState::Conflicted
-		|| WorkingCopyState == EWorkingCopyState::Missing;
+	return bModifed;
 }
 
-
-bool FGitSourceControlState::CanAdd() const
+bool FPerforceSourceControlState::CanAdd() const
 {
-	return WorkingCopyState == EWorkingCopyState::NotControlled;
+	return State == EPerforceState::NotInDepot;
 }
 
-bool FGitSourceControlState::IsConflicted() const
+bool FPerforceSourceControlState::IsConflicted() const
 {
-	return WorkingCopyState == EWorkingCopyState::Conflicted;
+	return PendingResolveRevNumber != INVALID_REVISION;
 }
 
-bool FGitSourceControlState::CanRevert() const
+bool FPerforceSourceControlState::CanRevert() const
 {
+	// Note that this is not entirely true, as for instance conflicted files can technically be reverted by perforce
 	return CanCheckIn();
 }
 
