@@ -74,16 +74,21 @@ FName FGitSourceControlState::GetIconName() const
 		return FName("Subversion.NotAtHeadRevision");
 	case EWorkingCopyState::NotControlled:
 		return FName("Subversion.NotInDepot");
-	case EWorkingCopyState::MissingCommit:
-		return FName("Subversion.ModifiedOtherBranch");
-	case EWorkingCopyState::Unknown:
-	case EWorkingCopyState::Unchanged: // Unchanged is the same as "Pristine" (not checked out) for Perforce, ie no icon
-	case EWorkingCopyState::Ignored:
 	default:
-		return NAME_None;
+		switch(GitarmonyState)
+		{
+			case EGitarmonyState::ModifiedLocally:
+				return FName("Subversion.CheckedOut");
+			case EGitarmonyState::ModifiedOnRemoteBranch:
+				return FName("Subversion.NotAtHeadRevision");
+			case EGitarmonyState::ModifiedOnOtherBranch:
+				return FName("Subversion.ModifiedOtherBranch");
+			case EGitarmonyState::ModifiedOnOtherClone:
+				return FName("Subversion.ModifiedOtherBranch");
+			default:
+				return NAME_None;
+		}
 	}
-
-	return NAME_None;
 }
 
 FName FGitSourceControlState::GetSmallIconName() const
@@ -104,26 +109,27 @@ FName FGitSourceControlState::GetSmallIconName() const
 		return FName("Subversion.NotAtHeadRevision_Small");
 	case EWorkingCopyState::NotControlled:
 		return FName("Subversion.NotInDepot_Small");
-	case EWorkingCopyState::MissingCommit:
-		return FName("Subversion.ModifiedOtherBranch_Small");
-	case EWorkingCopyState::Unknown:
-	case EWorkingCopyState::Unchanged: // Unchanged is the same as "Pristine" (not checked out) for Perforce, ie no icon
-	case EWorkingCopyState::Ignored:
 	default:
-		return NAME_None;
+		switch(GitarmonyState)
+		{
+			case EGitarmonyState::ModifiedLocally:
+				return FName("Subversion.CheckedOut_Small");
+			case EGitarmonyState::ModifiedOnRemoteBranch:
+				return FName("Subversion.NotAtHeadRevision_Small");
+			case EGitarmonyState::ModifiedOnOtherBranch:
+				return FName("Subversion.ModifiedOtherBranch_Small");
+			case EGitarmonyState::ModifiedOnOtherClone:
+				return FName("Subversion.ModifiedOtherBranch_Small");
+			default:
+				return NAME_None;
+		}
 	}
-
-	return NAME_None;
 }
 
 FText FGitSourceControlState::GetDisplayName() const
 {
 	switch(WorkingCopyState)
 	{
-	case EWorkingCopyState::Unknown:
-		return LOCTEXT("Unknown", "Unknown");
-	case EWorkingCopyState::Unchanged:
-		return LOCTEXT("Unchanged", "Unchanged");
 	case EWorkingCopyState::Added:
 		return LOCTEXT("Added", "Added");
 	case EWorkingCopyState::Deleted:
@@ -142,23 +148,35 @@ FText FGitSourceControlState::GetDisplayName() const
 		return LOCTEXT("NotControlled", "Not under Source control");
 	case EWorkingCopyState::Missing:
 		return LOCTEXT("Missing", "Missing");
-	case EWorkingCopyState::MissingCommit:
-		const FText Scope = bIsMissingCommitOnRemote ? FText::FromString("local ") : FText::FromString("");
-		const FText Message = MissingCommitSha.IsEmpty() ? FString("uncomitted changes") : FText::Format(FText::FromString("{0}commit {1}"), Scope, MissingCommitSha);
-		return FText::Format(LOCTEXT("MissingCommit", "Missing {0} from {1}"), Message, MissingCommitAuthor);
+	default:
+		switch(GitarmonyState)
+		{
+		case EGitarmonyState::Unknown:
+			return LOCTEXT("Unknown", "Unknown source control state");
+		case EGitarmonyState::Unchanged:
+			return LOCTEXT("Unchanged", "There are no modifications");
+		case EGitarmonyState::ModifiedLocally:
+			return LOCTEXT("ModifiedLocally", "Modified locally");
+		case EGitarmonyState::ModifiedOnRemoteBranch:
+			return LOCTEXT("ModifiedOnRemoteBranch", "Modified on remote branch");
+		case EGitarmonyState::ModifiedOnOtherBranch:
+			return LOCTEXT("ModifiedOnOtherBranch", "Modified by commit {0} on other branch by {1}");
+		case EGitarmonyState::ModifiedOnOtherClone:
+			if (LastCommitSha.IsEmpty())
+			{
+				return LOCTEXT("ModifiedOnOtherClone", "Modified by local commit {0} by {1}");
+			}
+			return LOCTEXT("ModifiedOnOtherClone", "Modified by uncommited changes by {1}");
+		default:
+			return FText();
+		}
 	}
-
-	return FText();
 }
 
 FText FGitSourceControlState::GetDisplayTooltip() const
 {
 	switch(WorkingCopyState)
 	{
-	case EWorkingCopyState::Unknown:
-		return LOCTEXT("Unknown_Tooltip", "Unknown source control state");
-	case EWorkingCopyState::Unchanged:
-		return LOCTEXT("Pristine_Tooltip", "There are no modifications");
 	case EWorkingCopyState::Added:
 		return LOCTEXT("Added_Tooltip", "Item is scheduled for addition");
 	case EWorkingCopyState::Deleted:
@@ -177,13 +195,29 @@ FText FGitSourceControlState::GetDisplayTooltip() const
 		return LOCTEXT("NotControlled_Tooltip", "Item is not under version control.");
 	case EWorkingCopyState::Missing:
 		return LOCTEXT("Missing_Tooltip", "Item is missing (e.g., you moved or deleted it without using Git). This also indicates that a directory is incomplete (a checkout or update was interrupted).");
-	case EWorkingCopyState::MissingCommit:
-		const FText Scope = bIsMissingCommitOnRemote ? FText::FromString("local ") : FText::FromString("");
-		const FText Message = MissingCommitSha.IsEmpty() ? FString("uncomitted changes") : FText::Format(FText::FromString("{0}commit {1}"), Scope, MissingCommitSha);
-		return FText::Format(LOCTEXT("MissingCommit_Tooltip", "Missing {0} from {1}"), Message, MissingCommitAuthor);
+	default:
+		switch(GitarmonyState)
+		{
+		case EGitarmonyState::Unknown:
+			return LOCTEXT("Unknown_Tooltip", "Unknown source control state");
+		case EGitarmonyState::Unchanged:
+			return LOCTEXT("Unchanged_Tooltip", "There are no modifications");
+		case EGitarmonyState::ModifiedLocally:
+			return LOCTEXT("ModifiedLocally_Tooltip", "Modified locally");
+		case EGitarmonyState::ModifiedOnRemoteBranch:
+			return LOCTEXT("ModifiedOnRemoteBranch_Tooltip", "Modified on remote branch");
+		case EGitarmonyState::ModifiedOnOtherBranch:
+			return LOCTEXT("ModifiedOnOtherBranch_Tooltip", "Modified by commit {0} on other branch by {1}");
+		case EGitarmonyState::ModifiedOnOtherClone:
+			if (LastCommitSha.IsEmpty())
+			{
+				return LOCTEXT("ModifiedOnOtherClone", "Modified by local commit {0} by {1}");
+			}
+		return LOCTEXT("ModifiedOnOtherClone", "Modified by uncommited changes by {1}");
+		default:
+			return FText();
+		}
 	}
-
-	return FText();
 }
 
 const FString& FGitSourceControlState::GetFilename() const
@@ -213,7 +247,7 @@ bool FGitSourceControlState::CanCheckout() const
 
 bool FGitSourceControlState::IsCheckedOut() const
 {
-	return IsSourceControlled(); // With Git all tracked files in the working copy are always checked-out (as opposed to Perforce)
+	return GitarmonyState == EGitarmonyState::ModifiedLocally;
 }
 
 bool FGitSourceControlState::IsCheckedOutOther(FString* Who) const
@@ -223,7 +257,7 @@ bool FGitSourceControlState::IsCheckedOutOther(FString* Who) const
 
 bool FGitSourceControlState::IsCurrent() const
 {
-	return WorkingCopyState != EWorkingCopyState::MissingCommit;
+	return GitarmonyState != EGitarmonyState::Unchanged;
 }
 
 bool FGitSourceControlState::IsSourceControlled() const

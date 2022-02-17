@@ -22,7 +22,19 @@ namespace EWorkingCopyState
 		Conflicted,
 		NotControlled,
 		Ignored,
-		MissingCommit,
+	};
+}
+
+namespace EGitarmonyState
+{
+	enum Type
+	{
+		Unknown,
+		ModifiedLocally,
+		ModifiedOnRemoteBranch,
+		ModifiedOnOtherBranch,
+		ModifiedOnOtherClone,
+		Unchanged,
 	};
 }
 
@@ -32,10 +44,12 @@ public:
 	FGitSourceControlState( const FString& InLocalFilename )
 		: LocalFilename(InLocalFilename)
 		, WorkingCopyState(EWorkingCopyState::Unknown)
+		, GitarmonyState(EGitarmonyState::Unknown)
 		, TimeStamp(0)
-		, bIsMissingCommitOnRemote(false)
-		, MissingCommitSha("")
-		, MissingCommitAuthor("")
+		, LastCommitSha("")
+		, LastCommitBranches("")
+		, LastCommitHost("")
+		, LastCommitAuthor("")
 	{
 	}
 
@@ -87,15 +101,21 @@ public:
 	/** State of the working copy */
 	EWorkingCopyState::Type WorkingCopyState;
 
+	/** Gitarmony state */
+	EGitarmonyState::Type GitarmonyState;
+	
 	/** The timestamp of the last update */
 	FDateTime TimeStamp;
-
-	/** This is only useful to Gitarmony statuses. If the missing commit is on remote branches. */
-	bool bIsMissingCommitOnRemote;
 	
-	/** This is only useful to Gitarmony statuses. Sha of the first missing commit found for this file. */
-	FString MissingCommitSha;
+	/** Sha of the first missing commit found for this file. */
+	FString LastCommitSha;
 
-	/** This is only useful to Gitarmony statuses. Author of the first missing commit found for this file. */
-	FString MissingCommitAuthor;
+	/** Comma separated branches of the first missing commit found for this file. */
+	FString LastCommitBranches;
+
+	/** Hostname of the first missing commit found for this file. */
+	FString LastCommitHost;
+	
+	/** Author of the first missing commit found for this file. */
+	FString LastCommitAuthor;
 };

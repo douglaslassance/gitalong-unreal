@@ -728,10 +728,10 @@ static FString FilenameFromGitStatus(const FString& InResult)
 /**
  * @brief Extract the relative filename from a Gitarmony status result.
  *
- * Example of Gitarmony status: <filename> <commit> <author>
-Content/Textures/T_Perlin_Noise_M.uasset 0e3948fc383db8a0eb7081068d69f4f20a348a93 Tim Sweeney
-Content/Textures/T_Perlin_Noise_M.uasset 0 Tim Sweeney
-Content/Materials/M_Basic_Wall.uasset
+ * Example of Gitarmony status: <status> <filename> <commit> <branches> <host> <author>
+++- Content/Textures/T_Perlin_Noise_M.uasset 0e3948fc383db8a0eb7081068d69f4f20a348a93 feature-a,feature-b epic1 Tim Sweeney
+--+ Content/Textures/T_Perlin_Noise_M.uasset 0 feature-a epic1 Tim Sweeney
+=== Content/Materials/M_Basic_Wall.uasset
  *
  * @param[in] InResult One line of status
  * @return Relative filename extracted from the line of status
@@ -857,10 +857,10 @@ public:
 
 /**
  * Extract and interpret the file state from the given Gitarmony get-missing-commit result.
- * Example of Gitarmony status: <filename> <commit> <author>
-Content/Textures/T_Perlin_Noise_M.uasset 0e3948fc383db8a0eb7081068d69f4f20a348a93 Tim Sweeney
-Content/Textures/T_Perlin_Noise_M.uasset 0 Tim Sweeney
-Content/Materials/M_Basic_Wall.uasset
+ * Example of Gitarmony status: <status> <filename> <commit> <branches> <host> <author>
+++- Content/Textures/T_Perlin_Noise_M.uasset 0e3948fc383db8a0eb7081068d69f4f20a348a93 feature-a,feature-b epic1 Tim Sweeney
+--+ Content/Textures/T_Perlin_Noise_M.uasset 0 feature-a epic1 Tim Sweeney
+=== Content/Materials/M_Basic_Wall.uasset
 */
 class FGitarmonyStatusParser
 {
@@ -870,29 +870,57 @@ public:
 		TArray<FString> Splits;
 		// TODO: This space split parsing won't support filenames with spaces.
 		InResult.ParseIntoArray(Splits, TEXT(" "));
-		if (Splits.Num() >= 4)
-		{	
-			State = EWorkingCopyState::MissingCommit;
-			Splits.RemoveAt(0);
-			bIsMissingCommitOnRemote = Splits[0].Equals("R");
-			Splits.RemoveAt(0);
-			if (Splits[0] != 0)
+		if (Splits.Num() > 0)
+		{
+			switch(Splits[0])
 			{
-				MissingCommitSha = Splits[0];
+				case "*--":
+					State = EGitarmonyState::ModifiedLocally;
+					break;
+				case "**-":
+					State = EGitarmonyState::Unchanged;
+					break;
+				case "-*-":
+					State = EGitarmonyState::ModifiedOnOtherBranch;
+					break;
+				case "--*":
+					State = EGitarmonyState::ModifiedOnOtherClone;
+					break;
+				default:
+					State = EGitarmonyState::Unknown;
 			}
 			Splits.RemoveAt(0);
-			// The remainder of the splits are the author.
-			// TODO: Probably there is a better ways to get the right slice of the splits than removing the first item each time we use it.
-			MissingCommitAuthor = FString::Join(Splits, TEXT(" "));
-		} else
+		}
+		if (Splits.Num() > 0)
 		{
-			State = EWorkingCopyState::Unknown;
+			Splits.RemoveAt(0);
+		}
+		if (Splits.Num() > 0)
+		{
+			LastCommitSha = Splits[0] == "-" ? "" : Splits[0];
+			Splits.RemoveAt(0);
+		}
+		{
+			LastCommitBranches = Splits[0] == "-" ? "" : Splits[0];
+			Splits.RemoveAt(0);
+		}
+		if (Splits.Num() > 0)
+		{
+			LastCommitHost = Splits[0] == "-" ? "" : Splits[0];
+			Splits.RemoveAt(0);
+		}
+		if (Splits.Num() > 0)
+		{
+			// The remainder of the splits are the author.
+			LastCommitAuthor = FString::Join(Splits, TEXT(" "));
 		}
 	}
-	EWorkingCopyState::Type State;
-	bool bIsMissingCommitOnRemote;
-	FString MissingCommitSha;
-	FString MissingCommitAuthor;
+	EGitarmonyState::Type State;
+	FString LastCommitSha;
+	FString LastCommitBranches;
+	FString LastCommitHost;
+	FString LastCommitAuthor;
+
 };
 
 /**
@@ -986,40 +1014,38 @@ static void ParseFileStatusResult(const FString& InPathToGitBinary, const FStrin
 		{
 			// File found in status results; only the case for "changed" files
 			const FGitarmonyStatusParser StatusParser(InResults[IdxGitarmonyResult]);
-			FileState.WorkingCopyState = StatusParser.State;
-			FileState.bMissingCommitOnRemote = StatusParser.bMissingCommitOnRemote;
-			FileState.MissingCommitSha = StatusParser.MissingCommitSha;
-			FileState.MissingCommitAuthor = StatusParser.MissingCommitAuthor;
+			FileState.GitarmonyState = StatusParser.State;
+			FileState.LastCommitSha = StatusParser.LastCommitSha;
+			FileState.LastCommitBranches = StatusParser.LastCommitBranches;
+			FileState.LastCommitHost = StatusParser.LastCommitHost;
+			FileState.LastCommitAuthor = StatusParser.LastCommitAuthor;
 		}
 
-		if (!FileState.IsCheckedOutOther())
+		// Search the file in the list of status
+		const int32 IdxResult = InResults.IndexOfByPredicate(FGitStatusFileMatcher(File));
+		if(IdxResult != INDEX_NONE)
 		{
-			// Search the file in the list of status
-			const int32 IdxResult = InResults.IndexOfByPredicate(FGitStatusFileMatcher(File));
-			if(IdxResult != INDEX_NONE)
+			// File found in status results; only the case for "changed" files
+			const FGitStatusParser StatusParser(InResults[IdxResult]);
+			FileState.WorkingCopyState = StatusParser.State;
+			if(FileState.IsConflicted())
 			{
-				// File found in status results; only the case for "changed" files
-				const FGitStatusParser StatusParser(InResults[IdxResult]);
-				FileState.WorkingCopyState = StatusParser.State;
-				if(FileState.IsConflicted())
-				{
-					// In case of a conflict (unmerged file) get the base revision to merge
-					RunGetConflictStatus(InPathToGitBinary, InRepositoryRoot, File, FileState);
-				}
+				// In case of a conflict (unmerged file) get the base revision to merge
+				RunGetConflictStatus(InPathToGitBinary, InRepositoryRoot, File, FileState);
+			}
+		}
+		else
+		{
+			// File not found in status
+			if(FPaths::FileExists(File))
+			{
+				// usually means the file is unchanged,
+				FileState.WorkingCopyState = EWorkingCopyState::Unchanged;
 			}
 			else
 			{
-				// File not found in status
-				if(FPaths::FileExists(File))
-				{
-					// usually means the file is unchanged,
-					FileState.WorkingCopyState = EWorkingCopyState::Unchanged;
-				}
-				else
-				{
-					// but also the case for newly created content: there is no file on disk until the content is saved for the first time
-					FileState.WorkingCopyState = EWorkingCopyState::NotControlled;
-				}
+				// but also the case for newly created content: there is no file on disk until the content is saved for the first time
+				FileState.WorkingCopyState = EWorkingCopyState::NotControlled;
 			}
 		}
 		FileState.TimeStamp = Now;
@@ -1144,7 +1170,7 @@ bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InPathToGi
 		if(bResult)
 		{
 			TArray<FString> GitarmonyErrorMessages;
-			RunCommand(TEXT("get-missing-commit"), InPathToGitarmonyBinary, InRepositoryRoot, GitarmonyParameters, InFiles, GitarmonyResults, GitarmonyErrorMessages)
+			RunCommand(TEXT("get-missing-commit"), InPathToGitarmonyBinary, InRepositoryRoot, GitarmonyParameters, InFiles, GitarmonyResults, GitarmonyErrorMessages);
 			ParseStatusResults(InPathToGitBinary, InPathToGitarmonyBinary, InRepositoryRoot, Files.Value, Results, GitarmonyResults, OutStates);
 		}
 	}
