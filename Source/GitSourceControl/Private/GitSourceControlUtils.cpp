@@ -870,29 +870,45 @@ public:
 		TArray<FString> Splits;
 		// TODO: This space split parsing won't support filenames with spaces.
 		InResult.ParseIntoArray(Splits, TEXT(" "));
+		LastCommitSpread = ECommitSpread::Nowhere;
 		if (Splits.Num() > 0)
 		{
-			switch(Splits[0])
+			if (Splits[0][0] == '+')
 			{
-				case "*--":
-					State = EGitarmonyState::ModifiedLocally;
-					break;
-				case "**-":
-					State = EGitarmonyState::Unchanged;
-					break;
-				case "-*-":
-					State = EGitarmonyState::ModifiedOnOtherBranch;
-					break;
-				case "--*":
-					State = EGitarmonyState::ModifiedOnOtherClone;
-					break;
-				default:
-					State = EGitarmonyState::Unknown;
+				LastCommitSpread |= ECommitSpread::LocalUncommitted;
 			}
-			Splits.RemoveAt(0);
+			if (Splits[0][1] == '+')
+			{
+				LastCommitSpread |= ECommitSpread::LocalActiveBranch;
+			}
+			if (Splits[0][2] == '+')
+			{
+				LastCommitSpread |= ECommitSpread::LocalOtherBranch;
+			}
+			if (Splits[0][3] == '+')
+			{
+				LastCommitSpread |= ECommitSpread::RemoteMatchingBranch;
+			}
+			if (Splits[0][4] == '+')
+			{
+				LastCommitSpread |= ECommitSpread::RemoteOtherBranch;
+			}
+			if (Splits[0][5] == '+')
+			{
+				LastCommitSpread |= ECommitSpread::CloneOtherBranch;
+			}
+			if (Splits[0][6] == '+')
+			{
+				LastCommitSpread |= ECommitSpread::CloneMatchingBranch;
+			}
+			if (Splits[0][7] == '+')
+			{
+				LastCommitSpread |= ECommitSpread::CloneUncommitted;
+			}
 		}
 		if (Splits.Num() > 0)
 		{
+			// Removing the filename which is the second item in the splits and that we already know.
 			Splits.RemoveAt(0);
 		}
 		if (Splits.Num() > 0)
@@ -900,9 +916,21 @@ public:
 			LastCommitSha = Splits[0] == "-" ? "" : Splits[0];
 			Splits.RemoveAt(0);
 		}
+		if (Splits.Num() > 0)
 		{
-			LastCommitBranches = Splits[0] == "-" ? "" : Splits[0];
-			Splits.RemoveAt(0);
+			if (Splits[0] != "-")
+			{
+				Splits[0].ParseIntoArray(LastCommitLocalBranches, TEXT(","));;
+				Splits.RemoveAt(0);
+			}
+		}
+		if (Splits.Num() > 0)
+		{
+			if (Splits[0] != "-")
+			{
+				Splits[0].ParseIntoArray(LastCommitRemoteBranches, TEXT(","));;
+				Splits.RemoveAt(0);
+			}
 		}
 		if (Splits.Num() > 0)
 		{
@@ -915,9 +943,10 @@ public:
 			LastCommitAuthor = FString::Join(Splits, TEXT(" "));
 		}
 	}
-	EGitarmonyState::Type State;
+	ECommitSpread LastCommitSpread;
 	FString LastCommitSha;
-	FString LastCommitBranches;
+	TArray<FString> LastCommitLocalBranches;
+	TArray<FString> LastCommitRemoteBranches;
 	FString LastCommitHost;
 	FString LastCommitAuthor;
 
@@ -1014,9 +1043,10 @@ static void ParseFileStatusResult(const FString& InPathToGitBinary, const FStrin
 		{
 			// File found in status results; only the case for "changed" files
 			const FGitarmonyStatusParser StatusParser(InResults[IdxGitarmonyResult]);
-			FileState.GitarmonyState = StatusParser.State;
+			FileState.LastCommitSpread = StatusParser.LastCommitSpread;
 			FileState.LastCommitSha = StatusParser.LastCommitSha;
-			FileState.LastCommitBranches = StatusParser.LastCommitBranches;
+			FileState.LastCommitLocalBranches = StatusParser.LastCommitLocalBranches;
+			FileState.LastCommitRemoteBranches = StatusParser.LastCommitRemoteBranches;
 			FileState.LastCommitHost = StatusParser.LastCommitHost;
 			FileState.LastCommitAuthor = StatusParser.LastCommitAuthor;
 		}

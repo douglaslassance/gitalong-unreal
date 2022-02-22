@@ -25,18 +25,19 @@ namespace EWorkingCopyState
 	};
 }
 
-namespace EGitarmonyState
+enum class ECommitSpread: uint8
 {
-	enum Type
-	{
-		Unknown,
-		ModifiedLocally,
-		ModifiedOnRemoteBranch,
-		ModifiedOnOtherBranch,
-		ModifiedOnOtherClone,
-		Unchanged,
-	};
-}
+	Unknown,
+	LocalUncommitted,
+	LocalActiveBranch,
+	LocalOtherBranch,
+	RemoteMatchingBranch,
+	RemoteOtherBranch,
+	CloneOtherBranch,
+	CloneMatchingBranch,
+	CloneUncommitted,
+};
+ENUM_CLASS_FLAGS(ECommitSpread);
 
 class FGitSourceControlState : public ISourceControlState, public TSharedFromThis<FGitSourceControlState, ESPMode::ThreadSafe>
 {
@@ -44,10 +45,9 @@ public:
 	FGitSourceControlState( const FString& InLocalFilename )
 		: LocalFilename(InLocalFilename)
 		, WorkingCopyState(EWorkingCopyState::Unknown)
-		, GitarmonyState(EGitarmonyState::Unknown)
 		, TimeStamp(0)
+		, LastCommitSpread(ECommitSpread::Unknown)
 		, LastCommitSha("")
-		, LastCommitBranches("")
 		, LastCommitHost("")
 		, LastCommitAuthor("")
 	{
@@ -100,22 +100,25 @@ public:
 
 	/** State of the working copy */
 	EWorkingCopyState::Type WorkingCopyState;
-
-	/** Gitarmony state */
-	EGitarmonyState::Type GitarmonyState;
 	
 	/** The timestamp of the last update */
 	FDateTime TimeStamp;
+
+	/** The spread of the last commit for this file. */
+	ECommitSpread LastCommitSpread;
 	
-	/** Sha of the first missing commit found for this file. */
+	/** Sha of the last commit for this file. */
 	FString LastCommitSha;
 
-	/** Comma separated branches of the first missing commit found for this file. */
-	FString LastCommitBranches;
+	/** List of local branch names where the last commit for this file lives.. */
+	TArray<FString> LastCommitLocalBranches;
 
-	/** Hostname of the first missing commit found for this file. */
+	/** List of remote branch names where the last commit for this file lives.. */
+	TArray<FString> LastCommitRemoteBranches;
+	
+	/** Hostname for the last commit of this file. */
 	FString LastCommitHost;
 	
-	/** Author of the first missing commit found for this file. */
+	/** Author or user for the last commit of this file. */
 	FString LastCommitAuthor;
 };

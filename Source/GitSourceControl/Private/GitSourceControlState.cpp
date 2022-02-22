@@ -74,20 +74,27 @@ FName FGitSourceControlState::GetIconName() const
 		return FName("Subversion.NotAtHeadRevision");
 	case EWorkingCopyState::NotControlled:
 		return FName("Subversion.NotInDepot");
+	case EWorkingCopyState::Unknown:
+	case EWorkingCopyState::Unchanged: // Unchanged is the same as "Pristine" (not checked out) for Perforce, ie no icon
+	case EWorkingCopyState::Ignored:
 	default:
-		switch(GitarmonyState)
+		if (LastCommitSpread == ECommitSpread::Unknown)
 		{
-			case EGitarmonyState::ModifiedLocally:
-				return FName("Subversion.CheckedOut");
-			case EGitarmonyState::ModifiedOnRemoteBranch:
-				return FName("Subversion.NotAtHeadRevision");
-			case EGitarmonyState::ModifiedOnOtherBranch:
-				return FName("Subversion.ModifiedOtherBranch");
-			case EGitarmonyState::ModifiedOnOtherClone:
-				return FName("Subversion.ModifiedOtherBranch");
-			default:
-				return NAME_None;
+			return NAME_None;
 		}
+		if (IsCheckedOut())
+		{
+			return FName("Subversion.CheckedOut");
+		}
+		if (!IsCurrent())
+		{
+			return FName("Subversion.NotAtHeadRevision");
+		}
+		if ((LastCommitSpread & ECommitSpread::LocalOtherBranch) == ECommitSpread::LocalOtherBranch)
+		{
+			return FName("Subversion.ModifiedOtherBranch");
+		}
+		return FName("Subversion.CheckedOutByOtherUser");
 	}
 }
 
@@ -109,20 +116,27 @@ FName FGitSourceControlState::GetSmallIconName() const
 		return FName("Subversion.NotAtHeadRevision_Small");
 	case EWorkingCopyState::NotControlled:
 		return FName("Subversion.NotInDepot_Small");
+	case EWorkingCopyState::Unknown:
+	case EWorkingCopyState::Unchanged: // Unchanged is the same as "Pristine" (not checked out) for Perforce, ie no icon
+	case EWorkingCopyState::Ignored:
 	default:
-		switch(GitarmonyState)
+		if (LastCommitSpread == ECommitSpread::Unknown)
 		{
-			case EGitarmonyState::ModifiedLocally:
-				return FName("Subversion.CheckedOut_Small");
-			case EGitarmonyState::ModifiedOnRemoteBranch:
-				return FName("Subversion.NotAtHeadRevision_Small");
-			case EGitarmonyState::ModifiedOnOtherBranch:
-				return FName("Subversion.ModifiedOtherBranch_Small");
-			case EGitarmonyState::ModifiedOnOtherClone:
-				return FName("Subversion.ModifiedOtherBranch_Small");
-			default:
-				return NAME_None;
+			return NAME_None;
 		}
+		if (IsCheckedOut())
+		{
+			return FName("Subversion.CheckedOut_Small");
+		}
+		if (!IsCurrent())
+		{
+			return FName("Subversion.NotAtHeadRevision_Small");
+		}
+		if ((LastCommitSpread & ECommitSpread::LocalOtherBranch) == ECommitSpread::LocalOtherBranch)
+		{
+			return FName("Subversion.ModifiedOtherBranch_Small");
+		}
+		return FName("Subversion.CheckedOutByOtherUser_Small");
 	}
 }
 
@@ -145,31 +159,29 @@ FText FGitSourceControlState::GetDisplayName() const
 	case EWorkingCopyState::Ignored:
 		return LOCTEXT("Ignored", "Ignored");
 	case EWorkingCopyState::NotControlled:
-		return LOCTEXT("NotControlled", "Not under Source control");
+		return LOCTEXT("NotControlled", "Not under source control");
 	case EWorkingCopyState::Missing:
 		return LOCTEXT("Missing", "Missing");
+	case EWorkingCopyState::Unknown:
+	case EWorkingCopyState::Unchanged: // Unchanged is the same as "Pristine" (not checked out) for Perforce, ie no ico
 	default:
-		switch(GitarmonyState)
+		if (LastCommitSpread == ECommitSpread::Unknown)
 		{
-		case EGitarmonyState::Unknown:
-			return LOCTEXT("Unknown", "Unknown source control state");
-		case EGitarmonyState::Unchanged:
-			return LOCTEXT("Unchanged", "There are no modifications");
-		case EGitarmonyState::ModifiedLocally:
-			return LOCTEXT("ModifiedLocally", "Modified locally");
-		case EGitarmonyState::ModifiedOnRemoteBranch:
-			return LOCTEXT("ModifiedOnRemoteBranch", "Modified on remote branch");
-		case EGitarmonyState::ModifiedOnOtherBranch:
-			return LOCTEXT("ModifiedOnOtherBranch", "Modified by commit {0} on other branch by {1}");
-		case EGitarmonyState::ModifiedOnOtherClone:
-			if (LastCommitSha.IsEmpty())
-			{
-				return LOCTEXT("ModifiedOnOtherClone", "Modified by local commit {0} by {1}");
-			}
-			return LOCTEXT("ModifiedOnOtherClone", "Modified by uncommited changes by {1}");
-		default:
 			return FText();
 		}
+		if (IsCheckedOut())
+		{
+			return LOCTEXT("CheckedOut", "Checked out");
+		}
+		if (!IsCurrent())
+		{
+			return LOCTEXT("NotAtRevision", "Not at revision");
+		}
+		if ((LastCommitSpread & ECommitSpread::LocalOtherBranch) == ECommitSpread::LocalOtherBranch)
+		{
+			return LOCTEXT("ModifiedOtherBranch", "Modified in other branch");
+		}
+		return FText::Format(LOCTEXT("CheckedOutByOtherUser", "Checked out by {0}"), FText::FromString(LastCommitAuthor));
 	}
 }
 
@@ -196,27 +208,23 @@ FText FGitSourceControlState::GetDisplayTooltip() const
 	case EWorkingCopyState::Missing:
 		return LOCTEXT("Missing_Tooltip", "Item is missing (e.g., you moved or deleted it without using Git). This also indicates that a directory is incomplete (a checkout or update was interrupted).");
 	default:
-		switch(GitarmonyState)
+		if (LastCommitSpread == ECommitSpread::Unknown)
 		{
-		case EGitarmonyState::Unknown:
-			return LOCTEXT("Unknown_Tooltip", "Unknown source control state");
-		case EGitarmonyState::Unchanged:
-			return LOCTEXT("Unchanged_Tooltip", "There are no modifications");
-		case EGitarmonyState::ModifiedLocally:
-			return LOCTEXT("ModifiedLocally_Tooltip", "Modified locally");
-		case EGitarmonyState::ModifiedOnRemoteBranch:
-			return LOCTEXT("ModifiedOnRemoteBranch_Tooltip", "Modified on remote branch");
-		case EGitarmonyState::ModifiedOnOtherBranch:
-			return LOCTEXT("ModifiedOnOtherBranch_Tooltip", "Modified by commit {0} on other branch by {1}");
-		case EGitarmonyState::ModifiedOnOtherClone:
-			if (LastCommitSha.IsEmpty())
-			{
-				return LOCTEXT("ModifiedOnOtherClone", "Modified by local commit {0} by {1}");
-			}
-		return LOCTEXT("ModifiedOnOtherClone", "Modified by uncommited changes by {1}");
-		default:
 			return FText();
 		}
+		if (IsCheckedOut())
+		{
+			return LOCTEXT("CheckedOut", "Checked out");
+		}
+		if (!IsCurrent())
+		{
+			return LOCTEXT("NotAtRevision", "Not at revision");
+		}
+		if ((LastCommitSpread & ECommitSpread::LocalOtherBranch) == ECommitSpread::LocalOtherBranch)
+		{
+			return LOCTEXT("ModifiedOtherBranch", "Modified in other branch");
+		}
+		return FText::Format(LOCTEXT("CheckedOutByOtherUser", "Checked out by {0}"), FText::FromString(LastCommitAuthor));
 	}
 }
 
@@ -242,22 +250,34 @@ bool FGitSourceControlState::CanCheckIn() const
 
 bool FGitSourceControlState::CanCheckout() const
 {
+	if (LastCommitSpread == ECommitSpread::Unknown) {
+		return false;
+	}
 	return IsCurrent();
 }
 
 bool FGitSourceControlState::IsCheckedOut() const
 {
-	return GitarmonyState == EGitarmonyState::ModifiedLocally;
+	if (LastCommitSpread == ECommitSpread::Unknown) {
+		return IsSourceControlled(); // With Git all tracked files in the working copy are always checked-out (as opposed to Perforce)
+	}
+	return (LastCommitSpread & ECommitSpread::LocalUncommitted) == ECommitSpread::LocalUncommitted || (LastCommitSpread & ECommitSpread::LocalActiveBranch) == ECommitSpread::LocalActiveBranch;
 }
 
 bool FGitSourceControlState::IsCheckedOutOther(FString* Who) const
 {
+	if (LastCommitSpread == ECommitSpread::Unknown) {
+		return false; // Git does not lock checked-out files as Perforce does
+	}
 	return !IsCurrent();
 }
 
 bool FGitSourceControlState::IsCurrent() const
 {
-	return GitarmonyState != EGitarmonyState::Unchanged;
+	if (LastCommitSpread == ECommitSpread::Unknown) {
+		return true; // @todo check the state of the HEAD versus the state of tracked branch on remote
+	}
+	return (LastCommitSpread & ECommitSpread::LocalUncommitted) == ECommitSpread::LocalUncommitted || (LastCommitSpread & ECommitSpread::LocalActiveBranch) == ECommitSpread::LocalActiveBranch;
 }
 
 bool FGitSourceControlState::IsSourceControlled() const
@@ -282,12 +302,15 @@ bool FGitSourceControlState::IsIgnored() const
 
 bool FGitSourceControlState::CanEdit() const
 {
+	if (LastCommitSpread == ECommitSpread::Unknown) {
+		return true; // With Git all files in the working copy are always editable (as opposed to Perforce)
+	}
 	return IsCurrent();
 }
 
 bool FGitSourceControlState::CanDelete() const
 {
-	return IsCurrent();
+	return IsSourceControlled() && IsCurrent();
 }
 
 bool FGitSourceControlState::IsUnknown() const
@@ -303,7 +326,7 @@ bool FGitSourceControlState::IsModified() const
 	//
 	// Thus, before check-in UE4 Editor call RevertUnchangedFiles() in PromptForCheckin() and CheckinFiles().
 	//
-	// So here we must take care to enumerate all states that need to be commited,
+	// So here we must take care to enumerate all states that need to be committed,
 	// all other will be discarded :
 	//  - Unknown
 	//  - Unchanged
@@ -321,7 +344,7 @@ bool FGitSourceControlState::IsModified() const
 
 bool FGitSourceControlState::CanAdd() const
 {
-	return WorkingCopyState == EWorkingCopyState::NotControlled;
+	return LastCommitSha.IsEmpty() || (LastCommitSpread & ECommitSpread::CloneUncommitted) != ECommitSpread::CloneUncommitted;
 }
 
 bool FGitSourceControlState::IsConflicted() const
