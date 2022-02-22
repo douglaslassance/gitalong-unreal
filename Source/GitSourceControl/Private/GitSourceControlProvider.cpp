@@ -80,15 +80,15 @@ void FGitSourceControlProvider::CheckGitarmonyAvailability()
 
 	if(!PathToGitarmonyBinary.IsEmpty())
 	{
-		bGitAvailable = GitSourceControlUtils::CheckGitAvailability(PathToGitarmonyBinary, &GitVersion);
-		if(bGitAvailable)
+		bGitarmonyAvailable = GitSourceControlUtils::CheckGitarmonyAvailability(PathToGitarmonyBinary, &GitarmonyVersion);
+		if(bGitarmonyAvailable)
 		{
 			CheckRepositoryStatus(PathToGitarmonyBinary);
 		}
 	}
 	else
 	{
-		bGitAvailable = false;
+		bGitarmonyAvailable = false;
 	}
 }
 

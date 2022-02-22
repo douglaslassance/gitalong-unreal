@@ -37,23 +37,6 @@ struct FGitVersion
 	}
 };
 
-struct FGitarmonyVersion
-{
-	int Major;
-	int Minor;
-	
-	FGitarmonyVersion() 
-		: Major(0)
-		, Minor(0)
-	{
-	}
-
-	inline bool IsGreaterOrEqualThan(int InMajor, int InMinor) const
-	{
-		return (Major > InMajor) || (Major == InMajor && (Minor >= InMinor));
-	}
-};
-
 class FGitSourceControlProvider : public ISourceControlProvider
 {
 public:
@@ -211,4 +194,7 @@ private:
 
 	/** Git version for feature checking */
 	FGitVersion GitVersion;
+
+	/** Gitarmony version for feature checking */
+	FGitVersion GitarmonyVersion;
 };

@@ -870,7 +870,7 @@ public:
 		TArray<FString> Splits;
 		// TODO: This space split parsing won't support filenames with spaces.
 		InResult.ParseIntoArray(Splits, TEXT(" "));
-		LastCommitSpread = ECommitSpread::Nowhere;
+		LastCommitSpread = ECommitSpread::Unknown;
 		if (Splits.Num() > 0)
 		{
 			if (Splits[0][0] == '+')
@@ -1200,7 +1200,7 @@ bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InPathToGi
 		if(bResult)
 		{
 			TArray<FString> GitarmonyErrorMessages;
-			RunCommand(TEXT("get-missing-commit"), InPathToGitarmonyBinary, InRepositoryRoot, GitarmonyParameters, InFiles, GitarmonyResults, GitarmonyErrorMessages);
+			RunCommand(TEXT("status"), InPathToGitarmonyBinary, InRepositoryRoot, GitarmonyParameters, InFiles, GitarmonyResults, GitarmonyErrorMessages);
 			ParseStatusResults(InPathToGitBinary, InPathToGitarmonyBinary, InRepositoryRoot, Files.Value, Results, GitarmonyResults, OutStates);
 		}
 	}
