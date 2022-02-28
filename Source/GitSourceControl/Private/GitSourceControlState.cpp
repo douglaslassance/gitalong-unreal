@@ -163,7 +163,7 @@ FText FGitSourceControlState::GetDisplayName() const
 	case EWorkingCopyState::Missing:
 		return LOCTEXT("Missing", "Missing");
 	case EWorkingCopyState::Unknown:
-	case EWorkingCopyState::Unchanged: // Unchanged is the same as "Pristine" (not checked out) for Perforce, ie no ico
+	case EWorkingCopyState::Unchanged: // Unchanged is the same as "Pristine" (not checked out) for Perforce, ie no icon
 	default:
 		if (LastCommitSpread == ECommitSpread::Unknown)
 		{
@@ -207,6 +207,8 @@ FText FGitSourceControlState::GetDisplayTooltip() const
 		return LOCTEXT("NotControlled_Tooltip", "Item is not under version control.");
 	case EWorkingCopyState::Missing:
 		return LOCTEXT("Missing_Tooltip", "Item is missing (e.g., you moved or deleted it without using Git). This also indicates that a directory is incomplete (a checkout or update was interrupted).");
+	case EWorkingCopyState::Unknown:
+	case EWorkingCopyState::Unchanged: // Unchanged is the same as "Pristine" (not checked out) for Perforce, ie no icon
 	default:
 		if (LastCommitSpread == ECommitSpread::Unknown)
 		{

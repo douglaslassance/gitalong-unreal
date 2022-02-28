@@ -53,12 +53,11 @@ namespace GitSourceControlUtils
 {
 
 // Launch the Git command line process and extract its results & errors
-static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPathToGitBinary, const FString& InRepositoryRoot, const TArray<FString>& InParameters, const TArray<FString>& InFiles, FString& OutResults, FString& OutErrors)
+static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPathToBinary, const FString& InRepositoryRoot, const TArray<FString>& InParameters, const TArray<FString>& InFiles, FString& OutResults, FString& OutErrors)
 {
 	int32 ReturnCode = 0;
 	FString FullCommand;
-	FString LogableCommand; // short version of the command for logging purpose
-
+	FString LoggableCommand; // short version of the command for logging purpose
 	if(!InRepositoryRoot.IsEmpty())
 	{
 		FString RepositoryRoot = InRepositoryRoot;
@@ -80,33 +79,33 @@ static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPat
 		FullCommand += TEXT("\" ");
 	}
 	// then the git command itself ("status", "log", "commit"...)
-	LogableCommand += InCommand;
+	LoggableCommand += InCommand;
 
 	// Append to the command all parameters, and then finally the files
 	for(const auto& Parameter : InParameters)
 	{
-		LogableCommand += TEXT(" ");
-		LogableCommand += Parameter;
+		LoggableCommand += TEXT(" ");
+		LoggableCommand += Parameter;
 	}
 	for(const auto& File : InFiles)
 	{
-		LogableCommand += TEXT(" \"");
-		LogableCommand += File;
-		LogableCommand += TEXT("\"");
+		LoggableCommand += TEXT(" \"");
+		LoggableCommand += File;
+		LoggableCommand += TEXT("\"");
 	}
 	// Also, Git does not have a "--non-interactive" option, as it auto-detects when there are no connected standard input/output streams
 
-	FullCommand += LogableCommand;
+	FullCommand += LoggableCommand;
 
 #if UE_BUILD_DEBUG
 	UE_LOG(LogSourceControl, Log, TEXT("RunCommandInternalRaw: 'git %s'"), *LogableCommand);
 #endif
 
-	FString PathToGitOrEnvBinary = InPathToGitBinary;
+	const FString PathToGitOrEnvBinary = InPathToBinary;
 #if PLATFORM_MAC
 	// The Cocoa application does not inherit shell environment variables, so add the path expected to have git-lfs to PATH
 	FString PathEnv = FPlatformMisc::GetEnvironmentVariable(TEXT("PATH"));
-	FString GitInstallPath = FPaths::GetPath(InPathToGitBinary);
+	FString GitInstallPath = FPaths::GetPath(InPathToBinary);
 
 	TArray<FString> PathArray;
 	PathEnv.ParseIntoArray(PathArray, FPlatformMisc::GetPathVarDelimiter());
@@ -123,7 +122,7 @@ static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPat
 	if (!bHasGitInstallPath)
 	{
 		PathToGitOrEnvBinary = FString("/usr/bin/env");
-		FullCommand = FString::Printf(TEXT("PATH=\"%s%s%s\" \"%s\" %s"), *GitInstallPath, FPlatformMisc::GetPathVarDelimiter(), *PathEnv, *InPathToGitBinary, *FullCommand);
+		FullCommand = FString::Printf(TEXT("PATH=\"%s%s%s\" \"%s\" %s"), *GitInstallPath, FPlatformMisc::GetPathVarDelimiter(), *PathEnv, *InPathToBinary, *FullCommand);
 	}
 #endif
 	FPlatformProcess::ExecProcess(*PathToGitOrEnvBinary, *FullCommand, &ReturnCode, &OutResults, &OutErrors);
@@ -156,12 +155,12 @@ static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPat
 }
 
 // Basic parsing or results & errors from the Git command line process
-static bool RunCommandInternal(const FString& InCommand, const FString& InPathToGitBinary, const FString& InRepositoryRoot, const TArray<FString>& InParameters, const TArray<FString>& InFiles, TArray<FString>& OutResults, TArray<FString>& OutErrorMessages)
+static bool RunCommandInternal(const FString& InCommand, const FString& InPathToBinary, const FString& InRepositoryRoot, const TArray<FString>& InParameters, const TArray<FString>& InFiles, TArray<FString>& OutResults, TArray<FString>& OutErrorMessages)
 {
 	FString Results;
 	FString Errors;
 
-	const bool bResult = RunCommandInternalRaw(InCommand, InPathToGitBinary, InRepositoryRoot, InParameters, InFiles, Results, Errors);
+	const bool bResult = RunCommandInternalRaw(InCommand, InPathToBinary, InRepositoryRoot, InParameters, InFiles, Results, Errors);
 	Results.ParseIntoArray(OutResults, TEXT("\n"), true);
 	Errors.ParseIntoArray(OutErrorMessages, TEXT("\n"), true);
 
@@ -346,45 +345,45 @@ FString FindGitarmonyBinaryPath()
 #if PLATFORM_WINDOWS
 	// Look into standard install directories
 	FString BinaryPath(TEXT("C:/Program Files/Gitarmony/gitarmony.exe"));
-	bool bFound = CheckGitAvailability(BinaryPath);
+	bool bFound = CheckGitarmonyAvailability(BinaryPath);
 	if(!bFound)
 	{
 		// otherwise check the 32-bit program files directory.
 		BinaryPath = TEXT("C:/Program Files (x86)/Gitarmony/gitarmony.exe");
-		bFound = CheckGitAvailability(BinaryPath);
+		bFound = CheckGitarmonyAvailability(BinaryPath);
 	}
 	if(!bFound)
 	{
 		// else the install dir for the current user: C:\Users\UserName\AppData\Local\Programs\Git\cmd
 		const FString AppDataLocalPath = FPlatformMisc::GetEnvironmentVariable(TEXT("LOCALAPPDATA"));
 		BinaryPath = FString::Printf(TEXT("%s/Programs/Gitarmony/gitarmony.exe"), *AppDataLocalPath);
-		bFound = CheckGitAvailability(BinaryPath);
+		bFound = CheckGitarmonyAvailability(BinaryPath);
 	}
 	
 #elif PLATFORM_MAC
 	// 1) First of all, look for the version of git provided by official git
 	FString BinaryPath = TEXT("/usr/local/bin/gitarmony");
-	bool bFound = CheckGitAvailability(BinaryPath);
+	bool bFound = CheckGitarmonyAvailability(BinaryPath);
 
 	// 2) Else, look for the version of git provided by Homebrew
 	if (!bFound)
 	{
 		BinaryPath = TEXT("/usr/local/bin/gitarmony");
-		bFound = CheckGitAvailability(BinaryPath);
+		bFound = CheckGitarmonyAvailability(BinaryPath);
 	}
 
 	// 3) Else, look for the version of git provided by MacPorts
 	if (!bFound)
 	{
 		BinaryPath = TEXT("/opt/local/bin/gitarmony");
-		bFound = CheckGitAvailability(BinaryPath);
+		bFound = CheckGitarmonyAvailability(BinaryPath);
 	}
 
 	// 4) Else, look for the version of git provided by Command Line Tools
 	if (!bFound)
 	{
 		BinaryPath = TEXT("/usr/bin/gitarmony");
-		bFound = CheckGitAvailability(BinaryPath);
+		bFound = CheckGitarmonyAvailability(BinaryPath);
 	}
 	
 #else
@@ -424,6 +423,11 @@ bool CheckGitAvailability(const FString& InPathToBinary, FGitVersion *OutVersion
 		}
 	}
 
+	if (bGitAvailable)
+	{
+		// Gitarmony will need this to find the Git binary.
+		FPlatformMisc::SetEnvironmentVar(TEXT("GIT_PYTHON_REFRESH"), *FString("quiet"));
+	}
 	return bGitAvailable;
 }
 
@@ -471,11 +475,11 @@ void ParseGitVersion(const FString& InVersionString, FGitVersion *OutVersion)
 	}
 }
 
-void FindGitCapabilities(const FString& InPathToGitBinary, FGitVersion *OutVersion)
+void FindGitCapabilities(const FString& InPathToBinary, FGitVersion *OutVersion)
 {
 	FString InfoMessages;
 	FString ErrorMessages;
-	RunCommandInternalRaw(TEXT("cat-file -h"), InPathToGitBinary, FString(), TArray<FString>(), TArray<FString>(), InfoMessages, ErrorMessages);
+	RunCommandInternalRaw(TEXT("cat-file -h"), InPathToBinary, FString(), TArray<FString>(), TArray<FString>(), InfoMessages, ErrorMessages);
 	if (InfoMessages.Contains("--filters"))
 	{
 		OutVersion->bHasCatFileWithFilters = true;
@@ -616,7 +620,7 @@ bool GetRemoteUrl(const FString& InPathToGitBinary, const FString& InRepositoryR
 	return bResults;
 }
 
-bool RunCommand(const FString& InCommand, const FString& InPathToGitBinary, const FString& InRepositoryRoot, const TArray<FString>& InParameters, const TArray<FString>& InFiles, TArray<FString>& OutResults, TArray<FString>& OutErrorMessages)
+bool RunCommand(const FString& InCommand, const FString& InPathToBinary, const FString& InRepositoryRoot, const TArray<FString>& InParameters, const TArray<FString>& InFiles, TArray<FString>& OutResults, TArray<FString>& OutErrorMessages)
 {
 	bool bResult = true;
 
@@ -634,14 +638,14 @@ bool RunCommand(const FString& InCommand, const FString& InPathToGitBinary, cons
 
 			TArray<FString> BatchResults;
 			TArray<FString> BatchErrors;
-			bResult &= RunCommandInternal(InCommand, InPathToGitBinary, InRepositoryRoot, InParameters, FilesInBatch, BatchResults, BatchErrors);
+			bResult &= RunCommandInternal(InCommand, InPathToBinary, InRepositoryRoot, InParameters, FilesInBatch, BatchResults, BatchErrors);
 			OutResults += BatchResults;
 			OutErrorMessages += BatchErrors;
 		}
 	}
 	else
 	{
-		bResult &= RunCommandInternal(InCommand, InPathToGitBinary, InRepositoryRoot, InParameters, InFiles, OutResults, OutErrorMessages);
+		bResult &= RunCommandInternal(InCommand, InPathToBinary, InRepositoryRoot, InParameters, InFiles, OutResults, OutErrorMessages);
 	}
 
 	return bResult;
@@ -1115,12 +1119,13 @@ static void ParseDirectoryStatusResult(const FString& InPathToGitBinary, const F
  *  It is either a command for a whole directory (ie. "Content/", in case of "Submit to Source Control" menu),
  * or for one or more files all on a same directory (by design, since we group files by directory in RunUpdateStatus())
  *
- * @param[in]	InPathToGitBinary	The path to the Git binary
- * @param[in]	InRepositoryRoot	The Git repository from where to run the command - usually the Game directory (can be empty)
- * @param[in]	InFiles				List of files in a directory, or the path to the directory itself (never empty).
- * @param[out]	InResults			Results from the "status" command
- * @param[out]	InGitarmonyResults	Results from the gitarmony command
- * @param[out]	OutStates			States of files for witch the status has been gathered (distinct than InFiles in case of a "directory status")
+ * @param[in]	InPathToGitBinary		The path to the Git binary
+ * @param[in]	InPathToGitarmonyBinary	The path to the Gitarmony binary
+ * @param[in]	InRepositoryRoot		The Git repository from where to run the command - usually the Game directory (can be empty)
+ * @param[in]	InFiles					List of files in a directory, or the path to the directory itself (never empty).
+ * @param[out]	InResults				Results from the "status" command
+ * @param[out]	InGitarmonyResults		Results from the gitarmony command
+ * @param[out]	OutStates				States of files for witch the status has been gathered (distinct than InFiles in case of a "directory status")
  */
 static void ParseStatusResults(const FString& InPathToGitBinary, const FString& InPathToGitarmonyBinary, const FString& InRepositoryRoot, const TArray<FString>& InFiles, const TArray<FString>& InResults, const TArray<FString>& InGitarmonyResults, TArray<FGitSourceControlState>& OutStates)
 {
@@ -1130,8 +1135,7 @@ static void ParseStatusResults(const FString& InPathToGitBinary, const FString& 
 		//   (this is triggered by the "Submit to Source Control" menu)
 		TArray<FString> Files;
 		const FString& Directory = InFiles[0];
-		const bool bResult = ListFilesInDirectoryRecurse(InPathToGitBinary, InRepositoryRoot, Directory, Files);
-		if(bResult)
+		if(const bool bResult = ListFilesInDirectoryRecurse(InPathToGitBinary, InRepositoryRoot, Directory, Files))
 		{
 			ParseFileStatusResult(InPathToGitBinary, InPathToGitarmonyBinary, InRepositoryRoot, Files, InResults, InGitarmonyResults, OutStates);
 		}

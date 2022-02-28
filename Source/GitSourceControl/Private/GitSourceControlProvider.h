@@ -102,7 +102,7 @@ public:
 	}
 
 	/** Git version for feature checking */
-	inline const FGitVersion& GetGitVersion()
+	inline const FGitVersion& GetGitVersion() const
 	{
 		return GitVersion;
 	}
@@ -177,7 +177,7 @@ private:
 	/** Name of the current branch */
 	FString BranchName;
 
-	/** URL of the "origin" defaut remote server */
+	/** URL of the "origin" default remote server */
 	FString RemoteUrl;
 
 	/** State cache */

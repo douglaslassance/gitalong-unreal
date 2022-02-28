@@ -74,17 +74,13 @@ void FGitSourceControlProvider::CheckGitarmonyAvailability()
 		PathToGitarmonyBinary = GitSourceControlUtils::FindGitarmonyBinaryPath();
 		if(!PathToGitarmonyBinary.IsEmpty())
 		{
-			GitSourceControl.AccessSettings().SetBinaryPath(PathToGitarmonyBinary);
+			GitSourceControl.AccessSettings().SetGitarmonyBinaryPath(PathToGitarmonyBinary);
 		}
 	}
 
 	if(!PathToGitarmonyBinary.IsEmpty())
 	{
 		bGitarmonyAvailable = GitSourceControlUtils::CheckGitarmonyAvailability(PathToGitarmonyBinary, &GitarmonyVersion);
-		if(bGitarmonyAvailable)
-		{
-			CheckRepositoryStatus(PathToGitarmonyBinary);
-		}
 	}
 	else
 	{

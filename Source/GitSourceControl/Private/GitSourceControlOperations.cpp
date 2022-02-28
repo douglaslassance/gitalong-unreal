@@ -27,10 +27,16 @@ bool FGitConnectWorker::Execute(FGitSourceControlCommand& InCommand)
 		TArray<FString> ProjectDirs;
 		ProjectDirs.Add(FPaths::ConvertRelativePathToFull(FPaths::ProjectContentDir()));
 		ProjectDirs.Add(FPaths::ConvertRelativePathToFull(FPaths::ProjectConfigDir()));
-		InCommand.bCommandSuccessful = GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToGitarmonyBinary, InCommand.PathToRepositoryRoot, ProjectDirs, InCommand.ErrorMessages, States);
-		if(!InCommand.bCommandSuccessful || InCommand.ErrorMessages.Num() > 0)
+		if (0 < InCommand.PathToGitarmonyBinary.Len() && GitSourceControlUtils::CheckGitarmonyAvailability(InCommand.PathToGitarmonyBinary))
 		{
-			StaticCastSharedRef<FConnect>(InCommand.Operation)->SetErrorText(LOCTEXT("NotAGitRepository", "Failed to enable Git source control. You need to initialize the project as a Git repository first."));
+			InCommand.bCommandSuccessful = GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToGitarmonyBinary, InCommand.PathToRepositoryRoot, ProjectDirs, InCommand.ErrorMessages, States);
+			if(!InCommand.bCommandSuccessful || InCommand.ErrorMessages.Num() > 0)
+			{
+				StaticCastSharedRef<FConnect>(InCommand.Operation)->SetErrorText(LOCTEXT("NotAGitRepository", "Failed to enable Git source control. You need to initialize the project as a Git repository first."));
+				InCommand.bCommandSuccessful = false;
+			}
+		} else {
+			StaticCastSharedRef<FConnect>(InCommand.Operation)->SetErrorText(LOCTEXT("GitarmonyNotFound", "Failed to enable Git source control. You need to install Gitarmony and specify a valid path to gitarmony executable."));
 			InCommand.bCommandSuccessful = false;
 		}
 	}
@@ -125,7 +131,7 @@ bool FGitMarkForAddWorker::Execute(FGitSourceControlCommand& InCommand)
 	InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("add"), InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), InCommand.Files, InCommand.InfoMessages, InCommand.ErrorMessages);
 
 	// now update the status of our files
-	GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
+	GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToGitarmonyBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
 
 	return InCommand.bCommandSuccessful;
 }
@@ -147,7 +153,7 @@ bool FGitDeleteWorker::Execute(FGitSourceControlCommand& InCommand)
 	InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("rm"), InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), InCommand.Files, InCommand.InfoMessages, InCommand.ErrorMessages);
 
 	// now update the status of our files
-	GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
+	GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToGitarmonyBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
 
 	return InCommand.bCommandSuccessful;
 }
