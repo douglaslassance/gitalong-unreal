@@ -147,7 +147,7 @@ bool RunCommit(const FString& InPathToGitBinary, const FString& InRepositoryRoot
  * Run a Git "status" command and parse it.
  *
  * @param	InPathToGitBinary		The path to the Git binary
- * @param	InPathToGitarmonyBinary	The path to the Git binary
+ * @param	InPathToGitarmonyBinary	The path to the Gitarmony binary
  * @param	InRepositoryRoot		The Git repository from where to run the command - usually the Game directory (can be empty)
  * @param	InFiles					The files to be operated on
  * @param	OutErrorMessages		Any errors (from StdErr) as an array per-line

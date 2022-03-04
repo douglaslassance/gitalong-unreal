@@ -94,7 +94,7 @@ void SGitSourceControlSettings::Construct(const FArguments& InArgs)
 				[
 					SNew(STextBlock)
 					.Text(LOCTEXT("GitarmonyBinaryPathLabel", "Gitarmony Path"))
-					.ToolTipText(LOCTEXT("GitarmonyBinaryPathLabel_Tooltip", "Path to Gitarmony CLI binary"))
+					.ToolTipText(LOCTEXT("GitarmonyBinaryPathLabel_Tooltip", "Path to Gitarmony binary"))
 					.Font(Font)
 				]
 				+SHorizontalBox::Slot()

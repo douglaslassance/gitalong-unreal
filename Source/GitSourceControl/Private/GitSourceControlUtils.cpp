@@ -53,7 +53,7 @@ namespace GitSourceControlUtils
 {
 
 // Launch the Git command line process and extract its results & errors
-static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPathToBinary, const FString& InRepositoryRoot, const TArray<FString>& InParameters, const TArray<FString>& InFiles, FString& OutResults, FString& OutErrors)
+static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPathToBinary, const FString& InRepositoryRoot, const TArray<FString>& InParameters, const TArray<FString>& InFiles, FString& OutResults, FString& OutErrors, const FString& InPathToGitarmonyBinary = FString())
 {
 	int32 ReturnCode = 0;
 	FString FullCommand;
@@ -72,11 +72,13 @@ static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPat
 				RepositoryRoot = DestinationRepositoryRoot; // if found use it for the "add" command (else not, to avoid producing one more error in logs)
 			}
 		}
-
-		// Specify the working copy (the root) of the git repository (before the command itself)
-		FullCommand  = TEXT("-C \"");
-		FullCommand += RepositoryRoot;
-		FullCommand += TEXT("\" ");
+		if (InPathToBinary.Contains("git.exe"))
+		{
+			// Specify the working copy (the root) of the git repository (before the command itself)
+			FullCommand  = TEXT("-C \"");
+			FullCommand += RepositoryRoot;
+			FullCommand += TEXT("\" ");
+		}
 	}
 	// then the git command itself ("status", "log", "commit"...)
 	LoggableCommand += InCommand;
@@ -96,12 +98,11 @@ static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPat
 	// Also, Git does not have a "--non-interactive" option, as it auto-detects when there are no connected standard input/output streams
 
 	FullCommand += LoggableCommand;
-
+	
 #if UE_BUILD_DEBUG
-	UE_LOG(LogSourceControl, Log, TEXT("RunCommandInternalRaw: 'git %s'"), *LogableCommand);
+	UE_LOG(LogSourceControl, Log, TEXT("RunCommandInternalRaw: '%s %s'"), *InPathToBinary, *LoggableCommand);
 #endif
-
-	const FString PathToGitOrEnvBinary = InPathToBinary;
+	
 #if PLATFORM_MAC
 	// The Cocoa application does not inherit shell environment variables, so add the path expected to have git-lfs to PATH
 	FString PathEnv = FPlatformMisc::GetEnvironmentVariable(TEXT("PATH"));
@@ -125,7 +126,7 @@ static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPat
 		FullCommand = FString::Printf(TEXT("PATH=\"%s%s%s\" \"%s\" %s"), *GitInstallPath, FPlatformMisc::GetPathVarDelimiter(), *PathEnv, *InPathToBinary, *FullCommand);
 	}
 #endif
-	FPlatformProcess::ExecProcess(*PathToGitOrEnvBinary, *FullCommand, &ReturnCode, &OutResults, &OutErrors);
+	FPlatformProcess::ExecProcess(*InPathToBinary, *FullCommand, &ReturnCode, &OutResults, &OutErrors);
 
 #if UE_BUILD_DEBUG
 
@@ -388,7 +389,7 @@ FString FindGitarmonyBinaryPath()
 	
 #else
 	FString BinaryPath = TEXT("/usr/bin/gitarmony");
-	bool bFound = CheckGitAvailability(BinaryPath);
+	bool bFound = CheckGitarmonyAvailability(BinaryPath);
 #endif
 
 	if(bFound)
@@ -426,7 +427,8 @@ bool CheckGitAvailability(const FString& InPathToBinary, FGitVersion *OutVersion
 	if (bGitAvailable)
 	{
 		// Gitarmony will need this to find the Git binary.
-		FPlatformMisc::SetEnvironmentVar(TEXT("GIT_PYTHON_REFRESH"), *FString("quiet"));
+		// FPlatformMisc::SetEnvironmentVar(TEXT("GIT_PYTHON_REFRESH"), *FString("quiet"));
+		FPlatformMisc::SetEnvironmentVar(TEXT("GIT_PYTHON_GIT_EXECUTABLE"), *InPathToBinary);
 	}
 	return bGitAvailable;
 }
@@ -909,6 +911,7 @@ public:
 			{
 				LastCommitSpread |= ECommitSpread::CloneUncommitted;
 			}
+			Splits.RemoveAt(0);
 		}
 		if (Splits.Num() > 0)
 		{
@@ -924,17 +927,17 @@ public:
 		{
 			if (Splits[0] != "-")
 			{
-				Splits[0].ParseIntoArray(LastCommitLocalBranches, TEXT(","));;
-				Splits.RemoveAt(0);
+				Splits[0].ParseIntoArray(LastCommitLocalBranches, TEXT(","));
 			}
+			Splits.RemoveAt(0);
 		}
 		if (Splits.Num() > 0)
 		{
 			if (Splits[0] != "-")
 			{
 				Splits[0].ParseIntoArray(LastCommitRemoteBranches, TEXT(","));;
-				Splits.RemoveAt(0);
 			}
+			Splits.RemoveAt(0);
 		}
 		if (Splits.Num() > 0)
 		{
@@ -1045,8 +1048,7 @@ static void ParseFileStatusResult(const FString& InPathToGitBinary, const FStrin
 		const int32 IdxGitarmonyResult = InGitarmonyResults.IndexOfByPredicate(FGitarmonyStatusFileMatcher(File));
 		if(IdxGitarmonyResult != INDEX_NONE)
 		{
-			// File found in status results; only the case for "changed" files
-			const FGitarmonyStatusParser StatusParser(InResults[IdxGitarmonyResult]);
+			const FGitarmonyStatusParser StatusParser(InGitarmonyResults[IdxGitarmonyResult]);
 			FileState.LastCommitSpread = StatusParser.LastCommitSpread;
 			FileState.LastCommitSha = StatusParser.LastCommitSha;
 			FileState.LastCommitLocalBranches = StatusParser.LastCommitLocalBranches;
