@@ -947,7 +947,7 @@ public:
 		if (Splits.Num() > 0)
 		{
 			// The remainder of the splits are the author.
-			LastCommitAuthor = FString::Join(Splits, TEXT(" "));
+			LastCommitAuthor = (FString::Join(Splits, TEXT(" "))).LeftChop(1);
 		}
 	}
 	ECommitSpread LastCommitSpread;
@@ -1533,11 +1533,17 @@ bool UpdateCachedStates(const TArray<FGitSourceControlState>& InStates)
 	for(const auto& InState : InStates)
 	{
 		TSharedRef<FGitSourceControlState, ESPMode::ThreadSafe> State = Provider.GetStateInternal(InState.LocalFilename);
-		if(State->WorkingCopyState != InState.WorkingCopyState)
+		if(State->WorkingCopyState != InState.WorkingCopyState || State->LastCommitSpread != InState.LastCommitSpread)
 		{
 			State->WorkingCopyState = InState.WorkingCopyState;
 			State->PendingMergeBaseFileHash = InState.PendingMergeBaseFileHash;
 		//	State->TimeStamp = InState.TimeStamp; // @todo Bug report: Workaround a bug with the Source Control Module not updating file state after a "Save"
+			State->LastCommitSpread = InState.LastCommitSpread;
+			State->LastCommitSha =  InState.LastCommitSha;
+			State->LastCommitRemoteBranches = InState.LastCommitRemoteBranches;
+			State->LastCommitLocalBranches = InState.LastCommitRemoteBranches;
+			State->LastCommitHost = InState.LastCommitHost;
+			State->LastCommitAuthor = InState.LastCommitAuthor;
 			NbStatesUpdated++;
 		}
 	}

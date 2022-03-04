@@ -86,6 +86,10 @@ FName FGitSourceControlState::GetIconName() const
 		{
 			return FName("Perforce.CheckedOutByOtherUser");
 		}
+		if (IsCheckedOutInOtherBranch())
+		{
+			return FName("Perforce.CheckedOutByOtherUserOtherBranch");
+		}
 		if (!IsCurrent())
 		{
 			return FName("Perforce.NotAtHeadRevision");
@@ -124,6 +128,10 @@ FName FGitSourceControlState::GetSmallIconName() const
 		{
 			return FName("Perforce.CheckedOutByOtherUser_Small");
 		}
+		if (IsCheckedOutInOtherBranch())
+		{
+			return FName("Perforce.CheckedOutByOtherUserOtherBranch_Small");
+		}
 		if (!IsCurrent())
 		{
 			return FName("Perforce.NotAtHeadRevision_Small");
@@ -159,18 +167,29 @@ FText FGitSourceControlState::GetDisplayName() const
 	default:
 		if (IsCheckedOut())
 		{
-			return LOCTEXT("CheckedOut", "Checked out");
+			if (LastCommitSha.IsEmpty())
+			{
+				return LOCTEXT("CheckedOut", "Changed by local uncommitted changes");
+			}
+			return FText::Format(LOCTEXT("CheckedOut", "Changed by local commit {0}"), FText::FromString(LastCommitSha.Left(5)));
 		}
 		if (IsCheckedOutOther())
 		{
-			return FText::Format(LOCTEXT("CheckedOutOther", "Checked out by: {0}"), FText::FromString(LastCommitAuthor));
+			if (LastCommitSha.IsEmpty())
+			{
+				return FText::Format(LOCTEXT("CheckedOutOther", "Missing local changes by {0}"), FText::FromString(LastCommitAuthor));
+			}
+			return FText::Format(LOCTEXT("CheckedOutOther", "Missing commit {0} by {1}"), FText::FromString(LastCommitSha.Left(5)), FText::FromString(LastCommitAuthor));
+		}
+		if (IsCheckedOutInOtherBranch())
+		{
+			return FText::Format(LOCTEXT("CheckedOutInOtherBranch", "Missing commit {0} by {1} in {2} branch"), FText::FromString(LastCommitSha.Left(5)), FText::FromString(LastCommitAuthor), FText::FromString(LastCommitRemoteBranches[0]));
 		}
 		if (!IsCurrent())
 		{
-			return LOCTEXT("NotAtRevision", "Not at revision");
+			return FText::Format(LOCTEXT("NotAtRevision", "Missing commit {0} in {1} remote branch"), FText::FromString(LastCommitSha.Left(5)), FText::FromString(LastCommitRemoteBranches[0]));
 		}
 		return FText();
-		
 	}
 }
 
@@ -201,15 +220,27 @@ FText FGitSourceControlState::GetDisplayTooltip() const
 	default:
 		if (IsCheckedOut())
 		{
-			return LOCTEXT("CheckedOut", "Checked out");
+			if (LastCommitSha.IsEmpty())
+			{
+				return LOCTEXT("CheckedOut_Tooltip", "Changed by local uncommitted changes");
+			}
+			return FText::Format(LOCTEXT("CheckedOut_Tooltip", "Changed by local commit {0}"), FText::FromString(LastCommitSha.Left(5)));
 		}
 		if (IsCheckedOutOther())
 		{
-			return FText::Format(LOCTEXT("CheckedOutOther", "Checked out by: {0}"), FText::FromString(LastCommitAuthor));
+			if (LastCommitSha.IsEmpty())
+			{
+				return FText::Format(LOCTEXT("CheckedOutOther_Tooltip", "Missing local changes by {0}"), FText::FromString(LastCommitAuthor));
+			}
+			return FText::Format(LOCTEXT("CheckedOutOther_Tooltip", "Missing commit {0} by {1}"), FText::FromString(LastCommitSha.Left(5)), FText::FromString(LastCommitAuthor));
+		}
+		if (IsCheckedOutInOtherBranch())
+		{
+			return FText::Format(LOCTEXT("CheckedOutInOtherBranch_Tooltip", "Missing commit {0} by {1} in {2} branch"), FText::FromString(LastCommitSha.Left(5)), FText::FromString(LastCommitAuthor), FText::FromString(LastCommitRemoteBranches[0]));
 		}
 		if (!IsCurrent())
 		{
-			return LOCTEXT("NotAtRevision", "Not at revision");
+			return FText::Format(LOCTEXT("NotAtRevision_Tooltip", "Missing commit {0} in {1} remote branch"), FText::FromString(LastCommitSha.Left(5)), FText::FromString(LastCommitRemoteBranches[0]));
 		}
 		return FText();
 	}
@@ -246,9 +277,9 @@ bool FGitSourceControlState::CanCheckout() const
 bool FGitSourceControlState::IsCheckedOut() const
 {
 	if (LastCommitSpread == ECommitSpread::Unknown) {
-		return false; // With Git all tracked files in the working copy are always checked-out (as opposed to Perforce)
+		return false;
 	}
-	if ((LastCommitSpread & ECommitSpread::LocalUncommitted) == ECommitSpread::LocalUncommitted)
+	if (LastCommitSpread == ECommitSpread::LocalUncommitted)
 	{
 		return true;
 	}
@@ -260,12 +291,27 @@ bool FGitSourceControlState::IsCheckedOut() const
 bool FGitSourceControlState::IsCheckedOutOther(FString* Who) const
 {
 	if (LastCommitSpread == ECommitSpread::Unknown) {
-		return false; // Git does not lock checked-out files as Perforce does
+		return false;
 	}
-	const bool LocalUncommitted = (LastCommitSpread & ECommitSpread::LocalUncommitted) == ECommitSpread::LocalUncommitted;
+	if (LastCommitSpread == ECommitSpread::CloneUncommitted)
+	{
+		return true;
+	}
+	const bool CloneMatchingBranch = (LastCommitSpread & ECommitSpread::CloneMatchingBranch) == ECommitSpread::CloneMatchingBranch;
+	const bool RemoteMatchingBranch = (LastCommitSpread & ECommitSpread::RemoteMatchingBranch) == ECommitSpread::RemoteMatchingBranch;
+	return CloneMatchingBranch && !RemoteMatchingBranch;
+}
+
+bool FGitSourceControlState::IsCheckedOutInOtherBranch(const FString& CurrentBranch) const
+{
+	if (LastCommitSpread == ECommitSpread::Unknown) {
+		return false;
+	}
+	const bool RemoteOtherBranch = (LastCommitSpread & ECommitSpread::RemoteOtherBranch) == ECommitSpread::RemoteOtherBranch;
 	const bool LocalActiveBranch = (LastCommitSpread & ECommitSpread::LocalActiveBranch) == ECommitSpread::LocalActiveBranch;
-	const bool RemoteMatchingBranch = (LastCommitSpread & ECommitSpread::RemoteMatchingBranch) ==  ECommitSpread::RemoteMatchingBranch;
-	return (!LocalUncommitted && !LocalActiveBranch && !RemoteMatchingBranch);
+	const bool LocalOtherBranch = (LastCommitSpread & ECommitSpread::LocalOtherBranch) == ECommitSpread::LocalOtherBranch;
+	const bool CloneOtherBranch = (LastCommitSpread & ECommitSpread::CloneOtherBranch) == ECommitSpread::CloneOtherBranch;
+	return (RemoteOtherBranch || LocalOtherBranch || CloneOtherBranch)  && !LocalActiveBranch;
 }
 
 bool FGitSourceControlState::IsCurrent() const
