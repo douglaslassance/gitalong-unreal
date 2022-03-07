@@ -72,6 +72,7 @@ static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPat
 				RepositoryRoot = DestinationRepositoryRoot; // if found use it for the "add" command (else not, to avoid producing one more error in logs)
 			}
 		}
+		// @todo This is not safe as people could point to a Git executable not called git.exe.
 		if (InPathToBinary.Contains("git.exe"))
 		{
 			// Specify the working copy (the root) of the git repository (before the command itself)
@@ -874,7 +875,7 @@ public:
 	FGitarmonyStatusParser(const FString& InResult)
 	{
 		TArray<FString> Splits;
-		// TODO: This space split parsing won't support filenames with spaces.
+		// @todo This space split parsing won't support filenames with spaces.
 		InResult.ParseIntoArray(Splits, TEXT(" "));
 		LastCommitSpread = ECommitSpread::Unknown;
 		if (Splits.Num() > 0)

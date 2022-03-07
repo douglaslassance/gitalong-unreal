@@ -168,6 +168,9 @@ private:
 	/** Path to the root of the Git repository: can be the ProjectDir itself, or any parent directory (found by the "Connect" operation) */
 	FString PathToRepositoryRoot;
 
+	/** Path to the Gitarmony binary. */
+	FString PathToGitarmonyBinary;
+	
 	/** Git config user.name (from local repository, else globally) */
 	FString UserName;
 
@@ -197,4 +200,9 @@ private:
 
 	/** Gitarmony version for feature checking */
 	FGitVersion GitarmonyVersion;
+
+	void HandleOnPackageSaveEvent(const FString& PackageFilename, UObject* Outer);
+	
+	/** The handle for running a Gitarmony sync after assets are saved. */
+	FDelegateHandle OnPackageSaveEventHandle;
 };

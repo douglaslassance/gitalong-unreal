@@ -54,6 +54,24 @@ bool FGitConnectWorker::UpdateStates() const
 	return GitSourceControlUtils::UpdateCachedStates(States);
 }
 
+FName FGitCheckOutWorker::GetName() const
+{
+	return "CheckOut";
+}
+
+bool FGitCheckOutWorker::Execute(FGitSourceControlCommand& InCommand)
+{
+	check(InCommand.Operation->GetName() == GetName());
+	InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("unlock"), InCommand.PathToGitarmonyBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), InCommand.Files, InCommand.InfoMessages, InCommand.ErrorMessages);
+	GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToGitarmonyBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
+	return InCommand.bCommandSuccessful;
+}
+
+bool FGitCheckOutWorker::UpdateStates() const
+{
+	return GitSourceControlUtils::UpdateCachedStates(States);
+}
+
 static FText ParseCommitResults(const TArray<FString>& InResults)
 {
 	if(InResults.Num() >= 1)
@@ -152,6 +170,12 @@ bool FGitDeleteWorker::Execute(FGitSourceControlCommand& InCommand)
 
 	InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("rm"), InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), InCommand.Files, InCommand.InfoMessages, InCommand.ErrorMessages);
 
+	// @todo If Gitarmony preferences are set to not track uncomitted files. This is not necessary.
+	if (InCommand.bCommandSuccessful)
+	{
+		InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("sync"), InCommand.PathToGitarmonyBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), InCommand.Files, InCommand.InfoMessages, InCommand.ErrorMessages);
+	}
+	
 	// now update the status of our files
 	GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToGitarmonyBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
 
@@ -220,6 +244,13 @@ bool FGitRevertWorker::Execute(FGitSourceControlCommand& InCommand)
 	{
 		// revert any changes in working copy (this would fails if the asset was in "Added" state, since after "reset" it is now "untracked")
 		InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("checkout"), InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), OtherThanAddedExistingFiles, InCommand.InfoMessages, InCommand.ErrorMessages);
+	}
+
+	// @todo If Gitarmony preferences are set to not track uncomitted files. This is not necessary.
+	// Only doing the sync on rm and reset because gitarmony sync will run on checkout with the post-checkout hook.
+	if (InCommand.bCommandSuccessful && (MissingFiles.Num() > 0 || AllExistingFiles.Num() > 0))
+	{
+		InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("sync"), InCommand.PathToGitarmonyBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), TArray<FString>(), InCommand.InfoMessages, InCommand.ErrorMessages);
 	}
 
 	// now update the status of our files
@@ -342,6 +373,12 @@ bool FGitCopyWorker::Execute(FGitSourceControlCommand& InCommand)
 	// The redirector needs to be commited with the new asset to perform a real rename.
 	// => the following is to "MarkForAdd" the redirector, but it still need to be committed by selecting the whole directory and "check-in"
 	InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("add"), InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), InCommand.Files, InCommand.InfoMessages, InCommand.ErrorMessages);
+
+	// @todo If Gitarmony preferences are set to not track uncomitted files. This is not necessary.
+	if (InCommand.bCommandSuccessful)
+	{
+		InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("sync"), InCommand.PathToGitarmonyBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), TArray<FString>(), InCommand.InfoMessages, InCommand.ErrorMessages);
+	}
 
 	return InCommand.bCommandSuccessful;
 }

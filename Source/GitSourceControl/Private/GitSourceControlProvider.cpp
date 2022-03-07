@@ -34,6 +34,16 @@ void FGitSourceControlProvider::Init(bool bForceConnection)
 	}
 
 	// bForceConnection: not used anymore
+
+	if(bGitarmonyAvailable)
+	{
+		// Bind Gitarmony sync to save event
+		if (!UPackage::PackageSavedEvent.IsBoundToObject(this))
+		{
+			UE_LOG(LogSourceControl, Log, TEXT("Binding FGitSourceControlProvider::HandleOnPackageSaveEvent to PackageSavedEvent"));
+			OnPackageSaveEventHandle = UPackage::PackageSavedEvent.AddRaw(this, &FGitSourceControlProvider::HandleOnPackageSaveEvent);
+		}
+	}
 }
 
 void FGitSourceControlProvider::CheckGitAvailability()
@@ -67,7 +77,7 @@ void FGitSourceControlProvider::CheckGitAvailability()
 void FGitSourceControlProvider::CheckGitarmonyAvailability()
 {
 	FGitSourceControlModule& GitSourceControl = FModuleManager::LoadModuleChecked<FGitSourceControlModule>("GitSourceControl");
-	FString PathToGitarmonyBinary = GitSourceControl.AccessSettings().GetGitarmonyBinaryPath();
+	PathToGitarmonyBinary = GitSourceControl.AccessSettings().GetGitarmonyBinaryPath();
 	if(PathToGitarmonyBinary.IsEmpty())
 	{
 		// Try to find Git binary, and update settings accordingly
@@ -124,6 +134,23 @@ void FGitSourceControlProvider::Close()
 	bGitRepositoryFound = false;
 	UserName.Empty();
 	UserEmail.Empty();
+
+	// Unbind Gitarmony sync from save event
+	UE_LOG(LogSourceControl, Log, TEXT("Unbinding FGitSourceControlProvider::HandleOnPackageSaveEvent to PackageSavedEvent"));
+	UPackage::PackageSavedEvent.Remove(OnPackageSaveEventHandle);
+}
+
+void FGitSourceControlProvider::HandleOnPackageSaveEvent(const FString& PackageFilename, UObject* Outer)
+{
+	TArray<FString> InResults;
+	TArray<FString> InErrorMessages;
+	TArray<FString> InFiles;
+	
+	const FString FullPath = FPaths::ConvertRelativePathToFull(PackageFilename);
+	InFiles.Add(FullPath);
+
+	// @todo If Gitarmony preferences are set to not track uncomitted files. This is not necessary.
+	GitSourceControlUtils::RunCommand(TEXT("sync"), GitSourceControlUtils::FindGitarmonyBinaryPath(), FullPath, TArray<FString>(), InFiles, InResults, InErrorMessages);
 }
 
 TSharedRef<FGitSourceControlState, ESPMode::ThreadSafe> FGitSourceControlProvider::GetStateInternal(const FString& Filename)
@@ -258,11 +285,13 @@ ECommandResult::Type FGitSourceControlProvider::Execute( const TSharedRef<ISourc
 	if(InConcurrency == EConcurrency::Synchronous)
 	{
 		Command->bAutoDelete = false;
+		UE_LOG(LogSourceControl, Log, TEXT("ExecuteSynchronousCommand(%s)"), *InOperation->GetName().ToString());
 		return ExecuteSynchronousCommand(*Command, InOperation->GetInProgressString());
 	}
 	else
 	{
 		Command->bAutoDelete = true;
+		UE_LOG(LogSourceControl, Log, TEXT("IssueAsynchronousCommand(%s)"), *InOperation->GetName().ToString());
 		return IssueCommand(*Command);
 	}
 }
@@ -278,7 +307,7 @@ void FGitSourceControlProvider::CancelOperation( const TSharedRef<ISourceControl
 
 bool FGitSourceControlProvider::UsesLocalReadOnlyState() const
 {
-	return false;
+	return true;
 }
 
 bool FGitSourceControlProvider::UsesChangelists() const

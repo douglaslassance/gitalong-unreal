@@ -22,6 +22,21 @@ public:
 	TArray<FGitSourceControlState> States;
 };
 
+/** Lock (check-out) a set of files using Gitarmony. */
+class FGitCheckOutWorker : public IGitSourceControlWorker
+{
+public:
+	virtual ~FGitCheckOutWorker() {}
+	// IGitSourceControlWorker interface
+	virtual FName GetName() const override;
+	virtual bool Execute(class FGitSourceControlCommand& InCommand) override;
+	virtual bool UpdateStates() const override;
+
+public:
+	/** Temporary states for results */
+	TArray<FGitSourceControlState> States;
+};
+
 /** Commit (check-in) a set of file to the local depot. */
 class FGitCheckInWorker : public IGitSourceControlWorker
 {

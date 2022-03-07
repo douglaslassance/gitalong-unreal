@@ -269,7 +269,7 @@ bool FGitSourceControlState::CanCheckIn() const
 bool FGitSourceControlState::CanCheckout() const
 {
 	if (LastCommitSpread == ECommitSpread::Unknown) {
-		return false;
+		return true;
 	}
 	return IsCurrent();
 }
