@@ -53,7 +53,7 @@ namespace GitSourceControlUtils
 {
 
 // Launch the Git command line process and extract its results & errors
-static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPathToBinary, const FString& InRepositoryRoot, const TArray<FString>& InParameters, const TArray<FString>& InFiles, FString& OutResults, FString& OutErrors, const FString& InPathToGitarmonyBinary = FString())
+static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPathToBinary, const FString& InRepositoryRoot, const TArray<FString>& InParameters, const TArray<FString>& InFiles, FString& OutResults, FString& OutErrors, const FString& InPathToGitalongBinary = FString())
 {
 	int32 ReturnCode = 0;
 	FString FullCommand;
@@ -342,55 +342,55 @@ FString FindGitBinaryPath()
 	return BinaryPath;
 }
 
-FString FindGitarmonyBinaryPath()
+FString FindGitalongBinaryPath()
 {
 #if PLATFORM_WINDOWS
 	// Look into standard install directories
-	FString BinaryPath(TEXT("C:/Program Files/Gitarmony/gitarmony.exe"));
-	bool bFound = CheckGitarmonyAvailability(BinaryPath);
+	FString BinaryPath(TEXT("C:/Program Files/Gitalong/gitalong.exe"));
+	bool bFound = CheckGitalongAvailability(BinaryPath);
 	if(!bFound)
 	{
 		// otherwise check the 32-bit program files directory.
-		BinaryPath = TEXT("C:/Program Files (x86)/Gitarmony/gitarmony.exe");
-		bFound = CheckGitarmonyAvailability(BinaryPath);
+		BinaryPath = TEXT("C:/Program Files (x86)/Gitalong/gitalong.exe");
+		bFound = CheckGitalongAvailability(BinaryPath);
 	}
 	if(!bFound)
 	{
 		// else the install dir for the current user: C:\Users\UserName\AppData\Local\Programs\Git\cmd
 		const FString AppDataLocalPath = FPlatformMisc::GetEnvironmentVariable(TEXT("LOCALAPPDATA"));
-		BinaryPath = FString::Printf(TEXT("%s/Programs/Gitarmony/gitarmony.exe"), *AppDataLocalPath);
-		bFound = CheckGitarmonyAvailability(BinaryPath);
+		BinaryPath = FString::Printf(TEXT("%s/Programs/Gitalong/gitalong.exe"), *AppDataLocalPath);
+		bFound = CheckGitalongAvailability(BinaryPath);
 	}
 	
 #elif PLATFORM_MAC
 	// 1) First of all, look for the version of git provided by official git
-	FString BinaryPath = TEXT("/usr/local/bin/gitarmony");
-	bool bFound = CheckGitarmonyAvailability(BinaryPath);
+	FString BinaryPath = TEXT("/usr/local/bin/gitalong");
+	bool bFound = CheckGitalongAvailability(BinaryPath);
 
 	// 2) Else, look for the version of git provided by Homebrew
 	if (!bFound)
 	{
-		BinaryPath = TEXT("/usr/local/bin/gitarmony");
-		bFound = CheckGitarmonyAvailability(BinaryPath);
+		BinaryPath = TEXT("/usr/local/bin/gitalong");
+		bFound = CheckGitalongAvailability(BinaryPath);
 	}
 
 	// 3) Else, look for the version of git provided by MacPorts
 	if (!bFound)
 	{
-		BinaryPath = TEXT("/opt/local/bin/gitarmony");
-		bFound = CheckGitarmonyAvailability(BinaryPath);
+		BinaryPath = TEXT("/opt/local/bin/gitalong");
+		bFound = CheckGitalongAvailability(BinaryPath);
 	}
 
 	// 4) Else, look for the version of git provided by Command Line Tools
 	if (!bFound)
 	{
-		BinaryPath = TEXT("/usr/bin/gitarmony");
-		bFound = CheckGitarmonyAvailability(BinaryPath);
+		BinaryPath = TEXT("/usr/bin/gitalong");
+		bFound = CheckGitalongAvailability(BinaryPath);
 	}
 	
 #else
-	FString BinaryPath = TEXT("/usr/bin/gitarmony");
-	bool bFound = CheckGitarmonyAvailability(BinaryPath);
+	FString BinaryPath = TEXT("/usr/bin/gitalong");
+	bool bFound = CheckGitalongAvailability(BinaryPath);
 #endif
 
 	if(bFound)
@@ -427,23 +427,23 @@ bool CheckGitAvailability(const FString& InPathToBinary, FGitVersion *OutVersion
 
 	if (bGitAvailable)
 	{
-		// Gitarmony will need this to find the Git binary.
+		// Gitalong will need this to find the Git binary.
 		// FPlatformMisc::SetEnvironmentVar(TEXT("GIT_PYTHON_REFRESH"), *FString("quiet"));
 		FPlatformMisc::SetEnvironmentVar(TEXT("GIT_PYTHON_GIT_EXECUTABLE"), *InPathToBinary);
 	}
 	return bGitAvailable;
 }
 
-bool CheckGitarmonyAvailability(const FString& InPathToBinary, FGitVersion *OutVersion)
+bool CheckGitalongAvailability(const FString& InPathToBinary, FGitVersion *OutVersion)
 {
 	FString InfoMessages;
 	FString ErrorMessages;
-	bool bGitarmonyAvailable = RunCommandInternalRaw(TEXT("version"), InPathToBinary, FString(), TArray<FString>(), TArray<FString>(), InfoMessages, ErrorMessages);
-	if(bGitarmonyAvailable)
+	bool bGitalongAvailable = RunCommandInternalRaw(TEXT("version"), InPathToBinary, FString(), TArray<FString>(), TArray<FString>(), InfoMessages, ErrorMessages);
+	if(bGitalongAvailable)
 	{
-		if(!InfoMessages.Contains("gitarmony"))
+		if(!InfoMessages.Contains("gitalong"))
 		{
-			bGitarmonyAvailable = false;
+			bGitalongAvailable = false;
 		}
 		else if(OutVersion)
 		{
@@ -451,7 +451,7 @@ bool CheckGitarmonyAvailability(const FString& InPathToBinary, FGitVersion *OutV
 		}
 	}
 
-	return bGitarmonyAvailable;
+	return bGitalongAvailable;
 }
 
 void ParseGitVersion(const FString& InVersionString, FGitVersion *OutVersion) 
@@ -733,9 +733,9 @@ static FString FilenameFromGitStatus(const FString& InResult)
 }
 
 /**
- * @brief Extract the relative filename from a Gitarmony status result.
+ * @brief Extract the relative filename from a Gitalong status result.
  *
- * Example of Gitarmony status: <status> <filename> <commit> <branches> <host> <author>
+ * Example of Gitalong status: <status> <filename> <commit> <branches> <host> <author>
 ++- Content/Textures/T_Perlin_Noise_M.uasset 0e3948fc383db8a0eb7081068d69f4f20a348a93 feature-a,feature-b epic1 Tim Sweeney
 --+ Content/Textures/T_Perlin_Noise_M.uasset 0 feature-a epic1 Tim Sweeney
 === Content/Materials/M_Basic_Wall.uasset
@@ -745,7 +745,7 @@ static FString FilenameFromGitStatus(const FString& InResult)
  *
  * @see FGitStatusFileMatcher and StateFromGitStatus()
  */
-static FString FilenameFromGitarmonyStatus(const FString& InResult)
+static FString FilenameFromGitalongStatus(const FString& InResult)
 {
 	TArray<FString> Splits;
 	InResult.ParseIntoArray(Splits, TEXT(" "));
@@ -774,18 +774,18 @@ private:
 	const FString& AbsoluteFilename;
 };
 
-/** Match the relative filename of a Gitarmony status result with a provided absolute filename */
-class FGitarmonyStatusFileMatcher
+/** Match the relative filename of a Gitalong status result with a provided absolute filename */
+class FGitalongStatusFileMatcher
 {
 public:
-	FGitarmonyStatusFileMatcher(const FString& InAbsoluteFilename)
+	FGitalongStatusFileMatcher(const FString& InAbsoluteFilename)
 		: AbsoluteFilename(InAbsoluteFilename)
 	{
 	}
 
 	bool operator()(const FString& InResult) const
 	{
-		return AbsoluteFilename.Contains(FilenameFromGitarmonyStatus(InResult));
+		return AbsoluteFilename.Contains(FilenameFromGitalongStatus(InResult));
 	}
 
 private:
@@ -863,16 +863,16 @@ public:
 };
 
 /**
- * Extract and interpret the file state from the given Gitarmony get-missing-commit result.
- * Example of Gitarmony status: <status> <filename> <commit> <branches> <host> <author>
+ * Extract and interpret the file state from the given Gitalong get-missing-commit result.
+ * Example of Gitalong status: <status> <filename> <commit> <branches> <host> <author>
 ++- Content/Textures/T_Perlin_Noise_M.uasset 0e3948fc383db8a0eb7081068d69f4f20a348a93 feature-a,feature-b epic1 Tim Sweeney
 --+ Content/Textures/T_Perlin_Noise_M.uasset 0 feature-a epic1 Tim Sweeney
 === Content/Materials/M_Basic_Wall.uasset
 */
-class FGitarmonyStatusParser
+class FGitalongStatusParser
 {
 public:
-	FGitarmonyStatusParser(const FString& InResult)
+	FGitalongStatusParser(const FString& InResult)
 	{
 		TArray<FString> Splits;
 		// @todo This space split parsing won't support filenames with spaces.
@@ -1036,7 +1036,7 @@ R  Content/Textures/T_Perlin_Noise_M.uasset -> Content/Textures/T_Perlin_Noise_M
 ?? Content/Materials/M_Basic_Wall.uasset
 !! BasicCode.sln
 */
-static void ParseFileStatusResult(const FString& InPathToGitBinary, const FString& InPathToGitarmonyBinary, const FString& InRepositoryRoot, const TArray<FString>& InFiles, const TArray<FString>& InResults, const TArray<FString>& InGitarmonyResults, TArray<FGitSourceControlState>& OutStates)
+static void ParseFileStatusResult(const FString& InPathToGitBinary, const FString& InPathToGitalongBinary, const FString& InRepositoryRoot, const TArray<FString>& InFiles, const TArray<FString>& InResults, const TArray<FString>& InGitalongResults, TArray<FGitSourceControlState>& OutStates)
 {
 	const FDateTime Now = FDateTime::Now();
 
@@ -1046,10 +1046,10 @@ static void ParseFileStatusResult(const FString& InPathToGitBinary, const FStrin
 		FGitSourceControlState FileState(File);
 
 		// Search the file in the list of status
-		const int32 IdxGitarmonyResult = InGitarmonyResults.IndexOfByPredicate(FGitarmonyStatusFileMatcher(File));
-		if(IdxGitarmonyResult != INDEX_NONE)
+		const int32 IdxGitalongResult = InGitalongResults.IndexOfByPredicate(FGitalongStatusFileMatcher(File));
+		if(IdxGitalongResult != INDEX_NONE)
 		{
-			const FGitarmonyStatusParser StatusParser(InGitarmonyResults[IdxGitarmonyResult]);
+			const FGitalongStatusParser StatusParser(InGitalongResults[IdxGitalongResult]);
 			FileState.LastCommitSpread = StatusParser.LastCommitSpread;
 			FileState.LastCommitSha = StatusParser.LastCommitSha;
 			FileState.LastCommitLocalBranches = StatusParser.LastCommitLocalBranches;
@@ -1123,14 +1123,14 @@ static void ParseDirectoryStatusResult(const FString& InPathToGitBinary, const F
  * or for one or more files all on a same directory (by design, since we group files by directory in RunUpdateStatus())
  *
  * @param[in]	InPathToGitBinary		The path to the Git binary
- * @param[in]	InPathToGitarmonyBinary	The path to the Gitarmony binary
+ * @param[in]	InPathToGitalongBinary	The path to the Gitalong binary
  * @param[in]	InRepositoryRoot		The Git repository from where to run the command - usually the Game directory (can be empty)
  * @param[in]	InFiles					List of files in a directory, or the path to the directory itself (never empty).
  * @param[out]	InResults				Results from the "status" command
- * @param[out]	InGitarmonyResults		Results from the gitarmony command
+ * @param[out]	InGitalongResults		Results from the gitalong command
  * @param[out]	OutStates				States of files for witch the status has been gathered (distinct than InFiles in case of a "directory status")
  */
-static void ParseStatusResults(const FString& InPathToGitBinary, const FString& InPathToGitarmonyBinary, const FString& InRepositoryRoot, const TArray<FString>& InFiles, const TArray<FString>& InResults, const TArray<FString>& InGitarmonyResults, TArray<FGitSourceControlState>& OutStates)
+static void ParseStatusResults(const FString& InPathToGitBinary, const FString& InPathToGitalongBinary, const FString& InRepositoryRoot, const TArray<FString>& InFiles, const TArray<FString>& InResults, const TArray<FString>& InGitalongResults, TArray<FGitSourceControlState>& OutStates)
 {
 	if(1 == InFiles.Num() && FPaths::DirectoryExists(InFiles[0]))
 	{
@@ -1140,7 +1140,7 @@ static void ParseStatusResults(const FString& InPathToGitBinary, const FString& 
 		const FString& Directory = InFiles[0];
 		if(const bool bResult = ListFilesInDirectoryRecurse(InPathToGitBinary, InRepositoryRoot, Directory, Files))
 		{
-			ParseFileStatusResult(InPathToGitBinary, InPathToGitarmonyBinary, InRepositoryRoot, Files, InResults, InGitarmonyResults, OutStates);
+			ParseFileStatusResult(InPathToGitBinary, InPathToGitalongBinary, InRepositoryRoot, Files, InResults, InGitalongResults, OutStates);
 		}
 		// The above cannot detect deleted assets since there is no file left to enumerate (either by the Content Browser or by git ls-files)
 		// => so we also parse the status results to explicitly look for Deleted/Missing assets
@@ -1149,12 +1149,12 @@ static void ParseStatusResults(const FString& InPathToGitBinary, const FString& 
 	else
 	{
 		// 2) General case for one or more files in the same directory.
-		ParseFileStatusResult(InPathToGitBinary, InPathToGitarmonyBinary, InRepositoryRoot, InFiles, InResults, InGitarmonyResults, OutStates);
+		ParseFileStatusResult(InPathToGitBinary, InPathToGitalongBinary, InRepositoryRoot, InFiles, InResults, InGitalongResults, OutStates);
 	}
 }
 
 // Run a batch of Git "status" command to update status of given files and/or directories.
-bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InPathToGitarmonyBinary, const FString& InRepositoryRoot, const TArray<FString>& InFiles, TArray<FString>& OutErrorMessages, TArray<FGitSourceControlState>& OutStates)
+bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InPathToGitalongBinary, const FString& InRepositoryRoot, const TArray<FString>& InFiles, TArray<FString>& OutErrorMessages, TArray<FGitSourceControlState>& OutStates)
 {
 	bool bResults = true;
 	TArray<FString> Results;
@@ -1162,8 +1162,8 @@ bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InPathToGi
 	Parameters.Add(TEXT("--porcelain"));
 	Parameters.Add(TEXT("--ignored"));
 
-	TArray<FString> GitarmonyResults;
-	TArray<FString> GitarmonyParameters;
+	TArray<FString> GitalongResults;
+	TArray<FString> GitalongParameters;
 	
 	// Git status does not show any "untracked files" when called with files from different subdirectories! (issue #3)
 	// 1) So here we group files by path (ie. by subdirectory)
@@ -1206,9 +1206,9 @@ bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InPathToGi
 		OutErrorMessages.Append(ErrorMessages);
 		if(bResult)
 		{
-			TArray<FString> GitarmonyErrorMessages;
-			RunCommand(TEXT("status"), InPathToGitarmonyBinary, InRepositoryRoot, GitarmonyParameters, InFiles, GitarmonyResults, GitarmonyErrorMessages);
-			ParseStatusResults(InPathToGitBinary, InPathToGitarmonyBinary, InRepositoryRoot, Files.Value, Results, GitarmonyResults, OutStates);
+			TArray<FString> GitalongErrorMessages;
+			RunCommand(TEXT("status"), InPathToGitalongBinary, InRepositoryRoot, GitalongParameters, InFiles, GitalongResults, GitalongErrorMessages);
+			ParseStatusResults(InPathToGitBinary, InPathToGitalongBinary, InRepositoryRoot, Files.Value, Results, GitalongResults, OutStates);
 		}
 	}
 	return bResults;

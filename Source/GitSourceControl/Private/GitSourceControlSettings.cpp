@@ -22,10 +22,10 @@ const FString FGitSourceControlSettings::GetBinaryPath() const
 	return BinaryPath;
 }
 
-const FString FGitSourceControlSettings::GetGitarmonyBinaryPath() const
+const FString FGitSourceControlSettings::GetGitalongBinaryPath() const
 {
 	FScopeLock ScopeLock(&CriticalSection);
-	return GitarmonyBinaryPath;
+	return GitalongBinaryPath;
 }
 
 
@@ -40,13 +40,13 @@ bool FGitSourceControlSettings::SetBinaryPath(const FString& InString)
 	return bChanged;
 }
 
-bool FGitSourceControlSettings::SetGitarmonyBinaryPath(const FString& InString)
+bool FGitSourceControlSettings::SetGitalongBinaryPath(const FString& InString)
 {
 	FScopeLock ScopeLock(&CriticalSection);
-	const bool bChanged = (GitarmonyBinaryPath != InString);
+	const bool bChanged = (GitalongBinaryPath != InString);
 	if(bChanged)
 	{
-		GitarmonyBinaryPath = InString;
+		GitalongBinaryPath = InString;
 	}
 	return bChanged;
 }
@@ -57,7 +57,7 @@ void FGitSourceControlSettings::LoadSettings()
 	FScopeLock ScopeLock(&CriticalSection);
 	const FString& IniFile = SourceControlHelpers::GetSettingsIni();
 	GConfig->GetString(*GitSettingsConstants::SettingsSection, TEXT("BinaryPath"), BinaryPath, IniFile);
-	GConfig->GetString(*GitSettingsConstants::SettingsSection, TEXT("GitarmonyBinaryPath"), GitarmonyBinaryPath, IniFile);
+	GConfig->GetString(*GitSettingsConstants::SettingsSection, TEXT("GitalongBinaryPath"), GitalongBinaryPath, IniFile);
 }
 
 void FGitSourceControlSettings::SaveSettings() const
@@ -65,5 +65,5 @@ void FGitSourceControlSettings::SaveSettings() const
 	FScopeLock ScopeLock(&CriticalSection);
 	const FString& IniFile = SourceControlHelpers::GetSettingsIni();
 	GConfig->SetString(*GitSettingsConstants::SettingsSection, TEXT("BinaryPath"), *BinaryPath, IniFile);
-	GConfig->SetString(*GitSettingsConstants::SettingsSection, TEXT("GitarmonyBinaryPath"), *GitarmonyBinaryPath, IniFile);
+	GConfig->SetString(*GitSettingsConstants::SettingsSection, TEXT("GitalongBinaryPath"), *GitalongBinaryPath, IniFile);
 }

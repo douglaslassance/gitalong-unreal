@@ -43,7 +43,7 @@ public:
 	/** Constructor */
 	FGitSourceControlProvider() 
 		: bGitAvailable(false)
-		, bGitarmonyAvailable(false)
+		, bGitalongAvailable(false)
 		, bGitRepositoryFound(false)
 	{
 	}
@@ -80,9 +80,9 @@ public:
 	void CheckGitAvailability();
 
 	/**
-	 * Check configuration, else standard paths, and run a Gitarmony "version" command to check the availability of the binary.
+	 * Check configuration, else standard paths, and run a Gitalong "version" command to check the availability of the binary.
 	 */
-	void CheckGitarmonyAvailability();
+	void CheckGitalongAvailability();
 	
 	/**
 	 * Find the .git/ repository and check it's status.
@@ -96,9 +96,9 @@ public:
 	}
 
 	/** Is git binary found and working. */
-	inline bool IsGitarmonyAvailable() const
+	inline bool IsGitalongAvailable() const
 	{
-		return bGitarmonyAvailable;
+		return bGitalongAvailable;
 	}
 
 	/** Git version for feature checking */
@@ -148,8 +148,8 @@ private:
 	/** Is git binary found and working. */
 	bool bGitAvailable;
 
-	/** Is gitarmony binary found and working. */
-	bool bGitarmonyAvailable;
+	/** Is gitalong binary found and working. */
+	bool bGitalongAvailable;
 	
 	/** Is git repository found. */
 	bool bGitRepositoryFound;
@@ -168,8 +168,8 @@ private:
 	/** Path to the root of the Git repository: can be the ProjectDir itself, or any parent directory (found by the "Connect" operation) */
 	FString PathToRepositoryRoot;
 
-	/** Path to the Gitarmony binary. */
-	FString PathToGitarmonyBinary;
+	/** Path to the Gitalong binary. */
+	FString PathToGitalongBinary;
 	
 	/** Git config user.name (from local repository, else globally) */
 	FString UserName;
@@ -198,11 +198,11 @@ private:
 	/** Git version for feature checking */
 	FGitVersion GitVersion;
 
-	/** Gitarmony version for feature checking */
-	FGitVersion GitarmonyVersion;
+	/** Gitalong version for feature checking */
+	FGitVersion GitalongVersion;
 
 	void HandleOnPackageSaveEvent(const FString& PackageFilename, UObject* Outer);
 	
-	/** The handle for running a Gitarmony sync after assets are saved. */
+	/** The handle for running a Gitalong sync after assets are saved. */
 	FDelegateHandle OnPackageSaveEventHandle;
 };

@@ -22,7 +22,7 @@ public:
 	TArray<FGitSourceControlState> States;
 };
 
-/** Lock (check-out) a set of files using Gitarmony. */
+/** Lock (check-out) a set of files using Gitalong. */
 class FGitCheckOutWorker : public IGitSourceControlWorker
 {
 public:

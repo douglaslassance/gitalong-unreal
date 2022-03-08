@@ -18,7 +18,7 @@
 
 #define LOCTEXT_NAMESPACE "GitSourceControl"
 
-static FName ProviderName("Gitarmony");
+static FName ProviderName("Gitalong");
 
 void FGitSourceControlProvider::Init(bool bForceConnection)
 {
@@ -28,16 +28,16 @@ void FGitSourceControlProvider::Init(bool bForceConnection)
 		CheckGitAvailability();
 	}
 
-	if(!bGitarmonyAvailable)
+	if(!bGitalongAvailable)
 	{
-		CheckGitarmonyAvailability();
+		CheckGitalongAvailability();
 	}
 
 	// bForceConnection: not used anymore
 
-	if(bGitarmonyAvailable)
+	if(bGitalongAvailable)
 	{
-		// Bind Gitarmony sync to save event
+		// Bind Gitalong sync to save event
 		if (!UPackage::PackageSavedEvent.IsBoundToObject(this))
 		{
 			UE_LOG(LogSourceControl, Log, TEXT("Binding FGitSourceControlProvider::HandleOnPackageSaveEvent to PackageSavedEvent"));
@@ -74,27 +74,27 @@ void FGitSourceControlProvider::CheckGitAvailability()
 	}
 }
 
-void FGitSourceControlProvider::CheckGitarmonyAvailability()
+void FGitSourceControlProvider::CheckGitalongAvailability()
 {
 	FGitSourceControlModule& GitSourceControl = FModuleManager::LoadModuleChecked<FGitSourceControlModule>("GitSourceControl");
-	PathToGitarmonyBinary = GitSourceControl.AccessSettings().GetGitarmonyBinaryPath();
-	if(PathToGitarmonyBinary.IsEmpty())
+	PathToGitalongBinary = GitSourceControl.AccessSettings().GetGitalongBinaryPath();
+	if(PathToGitalongBinary.IsEmpty())
 	{
 		// Try to find Git binary, and update settings accordingly
-		PathToGitarmonyBinary = GitSourceControlUtils::FindGitarmonyBinaryPath();
-		if(!PathToGitarmonyBinary.IsEmpty())
+		PathToGitalongBinary = GitSourceControlUtils::FindGitalongBinaryPath();
+		if(!PathToGitalongBinary.IsEmpty())
 		{
-			GitSourceControl.AccessSettings().SetGitarmonyBinaryPath(PathToGitarmonyBinary);
+			GitSourceControl.AccessSettings().SetGitalongBinaryPath(PathToGitalongBinary);
 		}
 	}
 
-	if(!PathToGitarmonyBinary.IsEmpty())
+	if(!PathToGitalongBinary.IsEmpty())
 	{
-		bGitarmonyAvailable = GitSourceControlUtils::CheckGitarmonyAvailability(PathToGitarmonyBinary, &GitarmonyVersion);
+		bGitalongAvailable = GitSourceControlUtils::CheckGitalongAvailability(PathToGitalongBinary, &GitalongVersion);
 	}
 	else
 	{
-		bGitarmonyAvailable = false;
+		bGitalongAvailable = false;
 	}
 }
 
@@ -135,7 +135,7 @@ void FGitSourceControlProvider::Close()
 	UserName.Empty();
 	UserEmail.Empty();
 
-	// Unbind Gitarmony sync from save event
+	// Unbind Gitalong sync from save event
 	UE_LOG(LogSourceControl, Log, TEXT("Unbinding FGitSourceControlProvider::HandleOnPackageSaveEvent to PackageSavedEvent"));
 	UPackage::PackageSavedEvent.Remove(OnPackageSaveEventHandle);
 }
@@ -149,8 +149,8 @@ void FGitSourceControlProvider::HandleOnPackageSaveEvent(const FString& PackageF
 	const FString FullPath = FPaths::ConvertRelativePathToFull(PackageFilename);
 	InFiles.Add(FullPath);
 
-	// @todo If Gitarmony preferences are set to not track uncomitted files. This is not necessary.
-	GitSourceControlUtils::RunCommand(TEXT("sync"), GitSourceControlUtils::FindGitarmonyBinaryPath(), FullPath, TArray<FString>(), InFiles, InResults, InErrorMessages);
+	// @todo If Gitalong preferences are set to not track uncomitted files. This is not necessary.
+	GitSourceControlUtils::RunCommand(TEXT("sync"), GitSourceControlUtils::FindGitalongBinaryPath(), FullPath, TArray<FString>(), InFiles, InResults, InErrorMessages);
 }
 
 TSharedRef<FGitSourceControlState, ESPMode::ThreadSafe> FGitSourceControlProvider::GetStateInternal(const FString& Filename)

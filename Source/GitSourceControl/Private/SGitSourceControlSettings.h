@@ -33,9 +33,9 @@ private:
 	FString GetBinaryPathString() const;
 	void OnBinaryPathPicked(const FString & PickedPath) const;
 
-	/** Delegates to get Gitarmony binary path from/to settings */
-	FString GetGitarmonyBinaryPathString() const;
-	void OnGitarmonyBinaryPathPicked(const FString & PickedPath) const;
+	/** Delegates to get Gitalong binary path from/to settings */
+	FString GetGitalongBinaryPathString() const;
+	void OnGitalongBinaryPathPicked(const FString & PickedPath) const;
 	
 	/** Delegate to get repository root, user name and email from provider */
 	FText GetPathToRepositoryRoot() const;
