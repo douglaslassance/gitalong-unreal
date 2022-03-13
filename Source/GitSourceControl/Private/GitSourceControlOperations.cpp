@@ -91,10 +91,10 @@ bool FGitCheckInWorker::Execute(FGitSourceControlCommand& InCommand)
 {
 	check(InCommand.Operation->GetName() == GetName());
 
-	TSharedRef<FCheckIn, ESPMode::ThreadSafe> Operation = StaticCastSharedRef<FCheckIn>(InCommand.Operation);
+	const TSharedRef<FCheckIn, ESPMode::ThreadSafe> Operation = StaticCastSharedRef<FCheckIn>(InCommand.Operation);
 
 	// make a temp file to place our commit message in
-	FGitScopedTempFile CommitMsgFile(Operation->GetDescription());
+	const FGitScopedTempFile CommitMsgFile(Operation->GetDescription());
 	if(CommitMsgFile.GetFilename().Len() > 0)
 	{
 		TArray<FString> Parameters;
@@ -272,7 +272,7 @@ FName FGitSyncWorker::GetName() const
 bool FGitSyncWorker::Execute(FGitSourceControlCommand& InCommand)
 {
    // pull the branch to get remote changes by rebasing any local commits (not merging them to avoid complex graphs)
-   // (this cannot work if any local files are modified but not commited)
+   // (this cannot work if any local files are modified but not committed)
    {
       TArray<FString> Parameters;
       Parameters.Add(TEXT("--rebase --autostash origin HEAD"));
@@ -299,7 +299,7 @@ bool FGitUpdateStatusWorker::Execute(FGitSourceControlCommand& InCommand)
 {
 	check(InCommand.Operation->GetName() == GetName());
 
-	TSharedRef<FUpdateStatus, ESPMode::ThreadSafe> Operation = StaticCastSharedRef<FUpdateStatus>(InCommand.Operation);
+	const TSharedRef<FUpdateStatus, ESPMode::ThreadSafe> Operation = StaticCastSharedRef<FUpdateStatus>(InCommand.Operation);
 
 	if(InCommand.Files.Num() > 0)
 	{
@@ -350,7 +350,7 @@ bool FGitUpdateStatusWorker::UpdateStates() const
 	// add history, if any
 	for(const auto& History : Histories)
 	{
-		TSharedRef<FGitSourceControlState, ESPMode::ThreadSafe> State = Provider.GetStateInternal(History.Key);
+		const TSharedRef<FGitSourceControlState, ESPMode::ThreadSafe> State = Provider.GetStateInternal(History.Key);
 		State->History = History.Value;
 		State->TimeStamp = FDateTime::Now();
 		bUpdated = true;
@@ -370,7 +370,7 @@ bool FGitCopyWorker::Execute(FGitSourceControlCommand& InCommand)
 
 	// Copy or Move operation on a single file : Git does not need an explicit copy nor move,
 	// but after a Move the Editor create a redirector file with the old asset name that points to the new asset.
-	// The redirector needs to be commited with the new asset to perform a real rename.
+	// The redirector needs to be committed with the new asset to perform a real rename.
 	// => the following is to "MarkForAdd" the redirector, but it still need to be committed by selecting the whole directory and "check-in"
 	InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("add"), InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), InCommand.Files, InCommand.InfoMessages, InCommand.ErrorMessages);
 
