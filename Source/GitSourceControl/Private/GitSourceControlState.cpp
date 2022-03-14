@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "GitSourceControlState.h"
+#include "GitSourceControlModule.h"
 
 #define LOCTEXT_NAMESPACE "GitSourceControl.State"
 
@@ -271,7 +272,7 @@ bool FGitSourceControlState::CanCheckout() const
 	if (LastCommitSpread == ECommitSpread::Unknown) {
 		return true;
 	}
-	return IsCurrent();
+	return !(IsCheckedOut() || IsCheckedOutOther() || IsCheckedOutInOtherBranch()) && IsCurrent();
 }
 
 bool FGitSourceControlState::IsCheckedOut() const
@@ -285,7 +286,14 @@ bool FGitSourceControlState::IsCheckedOut() const
 	}
 	const bool LocalActiveBranch = (LastCommitSpread & ECommitSpread::LocalActiveBranch) == ECommitSpread::LocalActiveBranch;
 	const bool RemoteMatchingBranch = (LastCommitSpread & ECommitSpread::RemoteMatchingBranch) ==  ECommitSpread::RemoteMatchingBranch;
-	return LocalActiveBranch && !RemoteMatchingBranch;
+	if (LocalActiveBranch && !RemoteMatchingBranch)
+	{
+		return true;
+	}
+	FGitSourceControlModule& GitSourceControl = FModuleManager::GetModuleChecked<FGitSourceControlModule>("GitSourceControl");
+	const FGitSourceControlProvider& Provider = GitSourceControl.GetProvider();
+	return Provider.PendingSaves.Contains(LocalFilename);
+	return false;
 }
 
 bool FGitSourceControlState::IsCheckedOutOther(FString* Who) const
@@ -319,6 +327,13 @@ bool FGitSourceControlState::IsCurrent() const
 	if (LastCommitSpread == ECommitSpread::Unknown) {
 		return true;
 	}
+	if (IsCheckedOut() || IsCheckedOutOther() || IsCheckedOutInOtherBranch())
+	{
+		// This seems paradoxical since if one on the above conditions is true you are not at the latest revision of the file, therefore not current.
+		// That said, because this method drives the visibility of the "Sync" right-click action in the editor,
+		// and because you cannot sync something that is in one of those state, we have to return true for these states.
+		return true;
+	}
 	const bool LocalUncommitted = (LastCommitSpread & ECommitSpread::LocalUncommitted) == ECommitSpread::LocalUncommitted;
 	const bool LocalActiveBranch = (LastCommitSpread & ECommitSpread::LocalActiveBranch) == ECommitSpread::LocalActiveBranch;
 	return (LocalUncommitted || LocalActiveBranch);
@@ -347,7 +362,7 @@ bool FGitSourceControlState::IsIgnored() const
 bool FGitSourceControlState::CanEdit() const
 {
 	if (LastCommitSpread == ECommitSpread::Unknown) {
-		return true; // With Git all files in the working copy are always editable (as opposed to Perforce)
+		return true;
 	}
 	return IsCurrent();
 }
@@ -388,7 +403,7 @@ bool FGitSourceControlState::IsModified() const
 
 bool FGitSourceControlState::CanAdd() const
 {
-	return LastCommitSha.IsEmpty() || (LastCommitSpread & ECommitSpread::CloneUncommitted) != ECommitSpread::CloneUncommitted;
+	return WorkingCopyState == EWorkingCopyState::NotControlled;
 }
 
 bool FGitSourceControlState::IsConflicted() const

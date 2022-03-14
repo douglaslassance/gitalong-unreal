@@ -149,7 +149,13 @@ void FGitSourceControlProvider::HandleOnPackageSaveEvent(const FString& PackageF
 	const FString FullPath = FPaths::ConvertRelativePathToFull(PackageFilename);
 	InFiles.Add(FullPath);
 
-	// @todo If Gitalong preferences are set to not track uncomitted files. This is not necessary.
+	if (PendingSaves.Contains(FullPath))
+	{
+		PendingSaves.Remove(FullPath);
+	}
+
+	// @todo Check if Gitalong preferences are set to not track uncommitted files in which case this not necessary.
+	// @todo This is not ideal as the Gitalong sync is expensive and we are running of each file saved.
 	GitSourceControlUtils::RunCommand(TEXT("sync"), GitSourceControlUtils::FindGitalongBinaryPath(), FullPath, TArray<FString>(), InFiles, InResults, InErrorMessages);
 }
 
@@ -307,6 +313,7 @@ void FGitSourceControlProvider::CancelOperation( const TSharedRef<ISourceControl
 
 bool FGitSourceControlProvider::UsesLocalReadOnlyState() const
 {
+	// @todo Check Gitalong config to see if modify_permissions is true.
 	return true;
 }
 

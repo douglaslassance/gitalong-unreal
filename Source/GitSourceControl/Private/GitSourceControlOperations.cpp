@@ -62,8 +62,20 @@ FName FGitCheckOutWorker::GetName() const
 bool FGitCheckOutWorker::Execute(FGitSourceControlCommand& InCommand)
 {
 	check(InCommand.Operation->GetName() == GetName());
-	InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("unlock"), InCommand.PathToGitalongBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), InCommand.Files, InCommand.InfoMessages, InCommand.ErrorMessages);
-	GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToGitalongBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
+	InCommand.bCommandSuccessful = true;
+	FGitSourceControlModule& GitSourceControl = FModuleManager::GetModuleChecked<FGitSourceControlModule>("GitSourceControl");
+	FGitSourceControlProvider& Provider = GitSourceControl.GetProvider();
+	for(const auto& File : InCommand.Files)
+	{
+		if(FPlatformFileManager::Get().GetPlatformFile().SetReadOnly(*File, false))
+		{
+			// @todo We should just save the asset here as currently checking on triggering save works, but checkout only puts the system in a bad state.
+			Provider.PendingSaves.Add(File);
+		} else
+		{
+			InCommand.bCommandSuccessful = false;
+		}
+	}
 	return InCommand.bCommandSuccessful;
 }
 
@@ -170,7 +182,7 @@ bool FGitDeleteWorker::Execute(FGitSourceControlCommand& InCommand)
 
 	InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("rm"), InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), InCommand.Files, InCommand.InfoMessages, InCommand.ErrorMessages);
 
-	// @todo If Gitalong preferences are set to not track uncomitted files. This is not necessary.
+	// @todo Check if Gitalong preferences are set to not track uncommitted files in which case this not necessary.
 	if (InCommand.bCommandSuccessful)
 	{
 		InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("sync"), InCommand.PathToGitalongBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), InCommand.Files, InCommand.InfoMessages, InCommand.ErrorMessages);
@@ -246,7 +258,7 @@ bool FGitRevertWorker::Execute(FGitSourceControlCommand& InCommand)
 		InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("checkout"), InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), OtherThanAddedExistingFiles, InCommand.InfoMessages, InCommand.ErrorMessages);
 	}
 
-	// @todo If Gitalong preferences are set to not track uncomitted files. This is not necessary.
+	// @todo Check if Gitalong preferences are set to not track uncommitted files in which case this not necessary.
 	// Only doing the sync on rm and reset because gitalong sync will run on checkout with the post-checkout hook.
 	if (InCommand.bCommandSuccessful && (MissingFiles.Num() > 0 || AllExistingFiles.Num() > 0))
 	{
@@ -374,7 +386,7 @@ bool FGitCopyWorker::Execute(FGitSourceControlCommand& InCommand)
 	// => the following is to "MarkForAdd" the redirector, but it still need to be committed by selecting the whole directory and "check-in"
 	InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("add"), InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), InCommand.Files, InCommand.InfoMessages, InCommand.ErrorMessages);
 
-	// @todo If Gitalong preferences are set to not track uncomitted files. This is not necessary.
+	// @todo Check if Gitalong preferences are set to not track uncommitted files in which case this not necessary.
 	if (InCommand.bCommandSuccessful)
 	{
 		InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("sync"), InCommand.PathToGitalongBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), TArray<FString>(), InCommand.InfoMessages, InCommand.ErrorMessages);
