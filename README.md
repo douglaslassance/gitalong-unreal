@@ -15,7 +15,7 @@ The recommended way to install this plugin is to submodule this repository insid
 git submodule add https://github.com/douglaslassance/gitalong-unreal Path/To/Plugins/Gitalong
 ```
 
-The plugins expects the project to be setup for Gitalong by following the directions feature on [Gitalong CLI](https://github.com/douglaslassance/gitalong-cli).
+The plugins expects the project to be setup for Gitalong by following the directions featured on [Gitalong CLI](https://github.com/douglaslassance/gitalong-cli).
 
 ## Usage
 

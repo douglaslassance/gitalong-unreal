@@ -72,7 +72,7 @@ static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPat
 				RepositoryRoot = DestinationRepositoryRoot; // if found use it for the "add" command (else not, to avoid producing one more error in logs)
 			}
 		}
-		// @todo Check if Gitalong preferences are set to not track uncommitted files in which case this not necessary.
+		// @todo This is not safe as people could point to a Git executable not called git.exe.
 		if (InPathToBinary.Contains("git.exe"))
 		{
 			// Specify the working copy (the root) of the git repository (before the command itself)
@@ -1164,8 +1164,6 @@ bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InPathToGi
 
 	TArray<FString> GitalongResults;
 	TArray<FString> GitalongParameters;
-	// By updating permissions when we check the status we are saving ourself the need on the entire repo on "gitalong sync".
-	GitalongParameters.Add(TEXT("--update-permissions"));
 	
 	// Git status does not show any "untracked files" when called with files from different subdirectories! (issue #3)
 	// 1) So here we group files by path (ie. by subdirectory)
