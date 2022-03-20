@@ -82,6 +82,35 @@ void SGitSourceControlSettings::Construct(const FArguments& InArgs)
 					.OnPathPicked(this, &SGitSourceControlSettings::OnBinaryPathPicked)
 				]
 			]
+			// Path to the Gitarmomy command line executable
+			+SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(2.0f)
+			.VAlign(VAlign_Center)
+			[
+				SNew(SHorizontalBox)
+				+SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				[
+					SNew(STextBlock)
+					.Text(LOCTEXT("GitalongBinaryPathLabel", "Gitalong Path"))
+					.ToolTipText(LOCTEXT("GitalongBinaryPathLabel_Tooltip", "Path to Gitalong binary"))
+					.Font(Font)
+				]
+				+SHorizontalBox::Slot()
+				.FillWidth(2.0f)
+				[
+					SNew(SFilePathPicker)
+					.BrowseButtonImage(FEditorStyle::GetBrush("PropertyWindow.Button_Ellipsis"))
+					.BrowseButtonStyle(FEditorStyle::Get(), "HoverHintOnly")
+					.BrowseButtonToolTip(LOCTEXT("GitalongBinaryPathLabel_Tooltip", "Path to Git binary"))
+					.BrowseDirectory(FEditorDirectories::Get().GetLastDirectory(ELastDirectory::GENERIC_OPEN))
+					.BrowseTitle(LOCTEXT("GitalongBinaryPathBrowseTitle", "File picker..."))
+					.FilePath(this, &SGitSourceControlSettings::GetGitalongBinaryPathString)
+					.FileTypeFilter(FileFilterText)
+					.OnPathPicked(this, &SGitSourceControlSettings::OnGitalongBinaryPathPicked)
+				]
+			]
 			// Root of the local repository
 			+SVerticalBox::Slot()
 			.FillHeight(1.0f)
@@ -365,6 +394,12 @@ FString SGitSourceControlSettings::GetBinaryPathString() const
 	return GitSourceControl.AccessSettings().GetBinaryPath();
 }
 
+FString SGitSourceControlSettings::GetGitalongBinaryPathString() const
+{
+	FGitSourceControlModule& GitSourceControl = FModuleManager::LoadModuleChecked<FGitSourceControlModule>("GitSourceControl");
+	return GitSourceControl.AccessSettings().GetGitalongBinaryPath();
+}
+
 void SGitSourceControlSettings::OnBinaryPathPicked( const FString& PickedPath ) const
 {
 	FGitSourceControlModule& GitSourceControl = FModuleManager::LoadModuleChecked<FGitSourceControlModule>("GitSourceControl");
@@ -379,6 +414,13 @@ void SGitSourceControlSettings::OnBinaryPathPicked( const FString& PickedPath ) 
 			GitSourceControl.SaveSettings();
 		}
 	}
+}
+
+void SGitSourceControlSettings::OnGitalongBinaryPathPicked( const FString& PickedPath ) const
+{
+	FGitSourceControlModule& GitSourceControl = FModuleManager::LoadModuleChecked<FGitSourceControlModule>("GitSourceControl");
+	FString PickedFullPath = FPaths::ConvertRelativePathToFull(PickedPath);
+	GitSourceControl.AccessSettings().SetGitalongBinaryPath(PickedFullPath);
 }
 
 FText SGitSourceControlSettings::GetPathToRepositoryRoot() const

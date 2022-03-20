@@ -25,6 +25,20 @@ namespace EWorkingCopyState
 	};
 }
 
+enum class ECommitSpread: uint8
+{
+	Unknown,
+	LocalUncommitted,
+	LocalActiveBranch,
+	LocalOtherBranch,
+	RemoteMatchingBranch,
+	RemoteOtherBranch,
+	CloneOtherBranch,
+	CloneMatchingBranch,
+	CloneUncommitted,
+};
+ENUM_CLASS_FLAGS(ECommitSpread);
+
 class FGitSourceControlState : public ISourceControlState, public TSharedFromThis<FGitSourceControlState, ESPMode::ThreadSafe>
 {
 public:
@@ -32,6 +46,10 @@ public:
 		: LocalFilename(InLocalFilename)
 		, WorkingCopyState(EWorkingCopyState::Unknown)
 		, TimeStamp(0)
+		, LastCommitSpread(ECommitSpread::Unknown)
+		, LastCommitSha("")
+		, LastCommitHost("")
+		, LastCommitAuthor("")
 	{
 	}
 
@@ -51,7 +69,7 @@ public:
 	virtual bool CanCheckout() const override;
 	virtual bool IsCheckedOut() const override;
 	virtual bool IsCheckedOutOther(FString* Who = nullptr) const override;
-	virtual bool IsCheckedOutInOtherBranch(const FString& CurrentBranch = FString()) const override { return false;  }
+	virtual bool IsCheckedOutInOtherBranch(const FString& CurrentBranch = FString()) const override;
 	virtual bool IsModifiedInOtherBranch(const FString& CurrentBranch = FString()) const override { return false; }
 	virtual bool IsCheckedOutOrModifiedInOtherBranch(const FString& CurrentBranch = FString()) const override { return IsCheckedOutInOtherBranch(CurrentBranch) || IsModifiedInOtherBranch(CurrentBranch); }
 	virtual TArray<FString> GetCheckedOutBranches() const override { return TArray<FString>(); }
@@ -82,7 +100,25 @@ public:
 
 	/** State of the working copy */
 	EWorkingCopyState::Type WorkingCopyState;
-
+	
 	/** The timestamp of the last update */
 	FDateTime TimeStamp;
+
+	/** The spread of the last commit for this file. */
+	ECommitSpread LastCommitSpread;
+	
+	/** Sha of the last commit for this file. */
+	FString LastCommitSha;
+
+	/** List of local branch names where the last commit for this file lives.. */
+	TArray<FString> LastCommitLocalBranches;
+
+	/** List of remote branch names where the last commit for this file lives.. */
+	TArray<FString> LastCommitRemoteBranches;
+	
+	/** Hostname for the last commit of this file. */
+	FString LastCommitHost;
+	
+	/** Author or user for the last commit of this file. */
+	FString LastCommitAuthor;
 };

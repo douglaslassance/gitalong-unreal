@@ -27,10 +27,16 @@ bool FGitConnectWorker::Execute(FGitSourceControlCommand& InCommand)
 		TArray<FString> ProjectDirs;
 		ProjectDirs.Add(FPaths::ConvertRelativePathToFull(FPaths::ProjectContentDir()));
 		ProjectDirs.Add(FPaths::ConvertRelativePathToFull(FPaths::ProjectConfigDir()));
-		InCommand.bCommandSuccessful = GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, ProjectDirs, InCommand.ErrorMessages, States);
-		if(!InCommand.bCommandSuccessful || InCommand.ErrorMessages.Num() > 0)
+		if (0 < InCommand.PathToGitalongBinary.Len() && GitSourceControlUtils::CheckGitalongAvailability(InCommand.PathToGitalongBinary))
 		{
-			StaticCastSharedRef<FConnect>(InCommand.Operation)->SetErrorText(LOCTEXT("NotAGitRepository", "Failed to enable Git source control. You need to initialize the project as a Git repository first."));
+			InCommand.bCommandSuccessful = GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToGitalongBinary, InCommand.PathToRepositoryRoot, ProjectDirs, InCommand.ErrorMessages, States);
+			if(!InCommand.bCommandSuccessful || InCommand.ErrorMessages.Num() > 0)
+			{
+				StaticCastSharedRef<FConnect>(InCommand.Operation)->SetErrorText(LOCTEXT("NotAGitRepository", "Failed to enable Git source control. You need to initialize the project as a Git repository first."));
+				InCommand.bCommandSuccessful = false;
+			}
+		} else {
+			StaticCastSharedRef<FConnect>(InCommand.Operation)->SetErrorText(LOCTEXT("GitalongNotFound", "Failed to enable Git source control. You need to install Gitalong and specify a valid path to gitalong executable."));
 			InCommand.bCommandSuccessful = false;
 		}
 	}
@@ -44,6 +50,36 @@ bool FGitConnectWorker::Execute(FGitSourceControlCommand& InCommand)
 }
 
 bool FGitConnectWorker::UpdateStates() const
+{
+	return GitSourceControlUtils::UpdateCachedStates(States);
+}
+
+FName FGitCheckOutWorker::GetName() const
+{
+	return "CheckOut";
+}
+
+bool FGitCheckOutWorker::Execute(FGitSourceControlCommand& InCommand)
+{
+	check(InCommand.Operation->GetName() == GetName());
+	InCommand.bCommandSuccessful = true;
+	FGitSourceControlModule& GitSourceControl = FModuleManager::GetModuleChecked<FGitSourceControlModule>("GitSourceControl");
+	FGitSourceControlProvider& Provider = GitSourceControl.GetProvider();
+	for(const auto& File : InCommand.Files)
+	{
+		if(FPlatformFileManager::Get().GetPlatformFile().SetReadOnly(*File, false))
+		{
+			// @todo We should just save the asset here as currently checking on triggering save works, but checkout only puts the system in a bad state.
+			Provider.PendingSaves.Add(File);
+		} else
+		{
+			InCommand.bCommandSuccessful = false;
+		}
+	}
+	return InCommand.bCommandSuccessful;
+}
+
+bool FGitCheckOutWorker::UpdateStates() const
 {
 	return GitSourceControlUtils::UpdateCachedStates(States);
 }
@@ -67,10 +103,10 @@ bool FGitCheckInWorker::Execute(FGitSourceControlCommand& InCommand)
 {
 	check(InCommand.Operation->GetName() == GetName());
 
-	TSharedRef<FCheckIn, ESPMode::ThreadSafe> Operation = StaticCastSharedRef<FCheckIn>(InCommand.Operation);
+	const TSharedRef<FCheckIn, ESPMode::ThreadSafe> Operation = StaticCastSharedRef<FCheckIn>(InCommand.Operation);
 
 	// make a temp file to place our commit message in
-	FGitScopedTempFile CommitMsgFile(Operation->GetDescription());
+	const FGitScopedTempFile CommitMsgFile(Operation->GetDescription());
 	if(CommitMsgFile.GetFilename().Len() > 0)
 	{
 		TArray<FString> Parameters;
@@ -103,7 +139,7 @@ bool FGitCheckInWorker::Execute(FGitSourceControlCommand& InCommand)
 	}
 
 	// now update the status of our files
-	GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
+	GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToGitalongBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
 
 	return InCommand.bCommandSuccessful;
 }
@@ -125,7 +161,7 @@ bool FGitMarkForAddWorker::Execute(FGitSourceControlCommand& InCommand)
 	InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("add"), InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), InCommand.Files, InCommand.InfoMessages, InCommand.ErrorMessages);
 
 	// now update the status of our files
-	GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
+	GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToGitalongBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
 
 	return InCommand.bCommandSuccessful;
 }
@@ -146,8 +182,14 @@ bool FGitDeleteWorker::Execute(FGitSourceControlCommand& InCommand)
 
 	InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("rm"), InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), InCommand.Files, InCommand.InfoMessages, InCommand.ErrorMessages);
 
+	// @todo Check if Gitalong preferences are set to not track uncommitted files in which case this not necessary.
+	if (InCommand.bCommandSuccessful)
+	{
+		InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("sync"), InCommand.PathToGitalongBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), InCommand.Files, InCommand.InfoMessages, InCommand.ErrorMessages);
+	}
+	
 	// now update the status of our files
-	GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
+	GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToGitalongBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
 
 	return InCommand.bCommandSuccessful;
 }
@@ -216,8 +258,15 @@ bool FGitRevertWorker::Execute(FGitSourceControlCommand& InCommand)
 		InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("checkout"), InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), OtherThanAddedExistingFiles, InCommand.InfoMessages, InCommand.ErrorMessages);
 	}
 
+	// @todo Check if Gitalong preferences are set to not track uncommitted files in which case this not necessary.
+	// Only doing the sync on rm and reset because gitalong sync will run on checkout with the post-checkout hook.
+	if (InCommand.bCommandSuccessful && (MissingFiles.Num() > 0 || AllExistingFiles.Num() > 0))
+	{
+		InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("sync"), InCommand.PathToGitalongBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), TArray<FString>(), InCommand.InfoMessages, InCommand.ErrorMessages);
+	}
+
 	// now update the status of our files
-	GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
+	GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToGitalongBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
 
 	return InCommand.bCommandSuccessful;
 }
@@ -235,15 +284,15 @@ FName FGitSyncWorker::GetName() const
 bool FGitSyncWorker::Execute(FGitSourceControlCommand& InCommand)
 {
    // pull the branch to get remote changes by rebasing any local commits (not merging them to avoid complex graphs)
-   // (this cannot work if any local files are modified but not commited)
+   // (this cannot work if any local files are modified but not committed)
    {
       TArray<FString> Parameters;
-      Parameters.Add(TEXT("--rebase origin HEAD"));
+      Parameters.Add(TEXT("--rebase --autostash origin HEAD"));
       InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("pull"), InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, Parameters, TArray<FString>(), InCommand.InfoMessages, InCommand.ErrorMessages);
    }
 
    // now update the status of our files
-   GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
+   GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToGitalongBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
 
    return InCommand.bCommandSuccessful;
 }
@@ -262,11 +311,11 @@ bool FGitUpdateStatusWorker::Execute(FGitSourceControlCommand& InCommand)
 {
 	check(InCommand.Operation->GetName() == GetName());
 
-	TSharedRef<FUpdateStatus, ESPMode::ThreadSafe> Operation = StaticCastSharedRef<FUpdateStatus>(InCommand.Operation);
+	const TSharedRef<FUpdateStatus, ESPMode::ThreadSafe> Operation = StaticCastSharedRef<FUpdateStatus>(InCommand.Operation);
 
 	if(InCommand.Files.Num() > 0)
 	{
-		InCommand.bCommandSuccessful = GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
+		InCommand.bCommandSuccessful = GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToGitalongBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
 		GitSourceControlUtils::RemoveRedundantErrors(InCommand, TEXT("' is outside repository"));
 
 		if(Operation->ShouldUpdateHistory())
@@ -294,7 +343,7 @@ bool FGitUpdateStatusWorker::Execute(FGitSourceControlCommand& InCommand)
 		{
 			TArray<FString> Files;
 			Files.Add(FPaths::ConvertRelativePathToFull(FPaths::ProjectDir()));
-			InCommand.bCommandSuccessful = GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, Files, InCommand.ErrorMessages, States);
+			InCommand.bCommandSuccessful = GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToGitalongBinary, InCommand.PathToRepositoryRoot, Files, InCommand.ErrorMessages, States);
 		}
 	}
 
@@ -313,7 +362,7 @@ bool FGitUpdateStatusWorker::UpdateStates() const
 	// add history, if any
 	for(const auto& History : Histories)
 	{
-		TSharedRef<FGitSourceControlState, ESPMode::ThreadSafe> State = Provider.GetStateInternal(History.Key);
+		const TSharedRef<FGitSourceControlState, ESPMode::ThreadSafe> State = Provider.GetStateInternal(History.Key);
 		State->History = History.Value;
 		State->TimeStamp = FDateTime::Now();
 		bUpdated = true;
@@ -333,9 +382,15 @@ bool FGitCopyWorker::Execute(FGitSourceControlCommand& InCommand)
 
 	// Copy or Move operation on a single file : Git does not need an explicit copy nor move,
 	// but after a Move the Editor create a redirector file with the old asset name that points to the new asset.
-	// The redirector needs to be commited with the new asset to perform a real rename.
+	// The redirector needs to be committed with the new asset to perform a real rename.
 	// => the following is to "MarkForAdd" the redirector, but it still need to be committed by selecting the whole directory and "check-in"
 	InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("add"), InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), InCommand.Files, InCommand.InfoMessages, InCommand.ErrorMessages);
+
+	// @todo Check if Gitalong preferences are set to not track uncommitted files in which case this not necessary.
+	if (InCommand.bCommandSuccessful)
+	{
+		InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("sync"), InCommand.PathToGitalongBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), TArray<FString>(), InCommand.InfoMessages, InCommand.ErrorMessages);
+	}
 
 	return InCommand.bCommandSuccessful;
 }
@@ -361,7 +416,7 @@ bool FGitResolveWorker::Execute( class FGitSourceControlCommand& InCommand )
 	}
 
 	// now update the status of our files
-	GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
+	GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToGitalongBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
 
 	return InCommand.bCommandSuccessful;
 }

@@ -43,6 +43,7 @@ public:
 	/** Constructor */
 	FGitSourceControlProvider() 
 		: bGitAvailable(false)
+		, bGitalongAvailable(false)
 		, bGitRepositoryFound(false)
 	{
 	}
@@ -79,6 +80,11 @@ public:
 	void CheckGitAvailability();
 
 	/**
+	 * Check configuration, else standard paths, and run a Gitalong "version" command to check the availability of the binary.
+	 */
+	void CheckGitalongAvailability();
+	
+	/**
 	 * Find the .git/ repository and check it's status.
 	 */
 	void CheckRepositoryStatus(const FString& InPathToGitBinary);
@@ -89,8 +95,14 @@ public:
 		return bGitAvailable;
 	}
 
+	/** Is git binary found and working. */
+	inline bool IsGitalongAvailable() const
+	{
+		return bGitalongAvailable;
+	}
+
 	/** Git version for feature checking */
-	inline const FGitVersion& GetGitVersion()
+	inline const FGitVersion& GetGitVersion() const
 	{
 		return GitVersion;
 	}
@@ -131,11 +143,16 @@ public:
 	/** Remove a named file from the state cache */
 	bool RemoveFileFromCache(const FString& Filename);
 
+	TArray<FString> PendingSaves;
+	
 private:
 
 	/** Is git binary found and working. */
 	bool bGitAvailable;
 
+	/** Is gitalong binary found and working. */
+	bool bGitalongAvailable;
+	
 	/** Is git repository found. */
 	bool bGitRepositoryFound;
 
@@ -153,6 +170,9 @@ private:
 	/** Path to the root of the Git repository: can be the ProjectDir itself, or any parent directory (found by the "Connect" operation) */
 	FString PathToRepositoryRoot;
 
+	/** Path to the Gitalong binary. */
+	FString PathToGitalongBinary;
+	
 	/** Git config user.name (from local repository, else globally) */
 	FString UserName;
 
@@ -162,7 +182,7 @@ private:
 	/** Name of the current branch */
 	FString BranchName;
 
-	/** URL of the "origin" defaut remote server */
+	/** URL of the "origin" default remote server */
 	FString RemoteUrl;
 
 	/** State cache */
@@ -179,4 +199,12 @@ private:
 
 	/** Git version for feature checking */
 	FGitVersion GitVersion;
+
+	/** Gitalong version for feature checking */
+	FGitVersion GitalongVersion;
+
+	void HandleOnPackageSaveEvent(const FString& PackageFilename, UObject* Outer);
+	
+	/** The handle for running a Gitalong sync after assets are saved. */
+	FDelegateHandle OnPackageSaveEventHandle;
 };

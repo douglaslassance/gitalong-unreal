@@ -53,12 +53,11 @@ namespace GitSourceControlUtils
 {
 
 // Launch the Git command line process and extract its results & errors
-static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPathToGitBinary, const FString& InRepositoryRoot, const TArray<FString>& InParameters, const TArray<FString>& InFiles, FString& OutResults, FString& OutErrors)
+static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPathToBinary, const FString& InRepositoryRoot, const TArray<FString>& InParameters, const TArray<FString>& InFiles, FString& OutResults, FString& OutErrors, const FString& InPathToGitalongBinary = FString())
 {
 	int32 ReturnCode = 0;
 	FString FullCommand;
-	FString LogableCommand; // short version of the command for logging purpose
-
+	FString LoggableCommand; // short version of the command for logging purpose
 	if(!InRepositoryRoot.IsEmpty())
 	{
 		FString RepositoryRoot = InRepositoryRoot;
@@ -73,40 +72,42 @@ static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPat
 				RepositoryRoot = DestinationRepositoryRoot; // if found use it for the "add" command (else not, to avoid producing one more error in logs)
 			}
 		}
-
-		// Specify the working copy (the root) of the git repository (before the command itself)
-		FullCommand  = TEXT("-C \"");
-		FullCommand += RepositoryRoot;
-		FullCommand += TEXT("\" ");
+		// @todo This is not safe as people could point to a Git executable not called git.exe.
+		if (InPathToBinary.Contains("git.exe"))
+		{
+			// Specify the working copy (the root) of the git repository (before the command itself)
+			FullCommand  = TEXT("-C \"");
+			FullCommand += RepositoryRoot;
+			FullCommand += TEXT("\" ");
+		}
 	}
 	// then the git command itself ("status", "log", "commit"...)
-	LogableCommand += InCommand;
+	LoggableCommand += InCommand;
 
 	// Append to the command all parameters, and then finally the files
 	for(const auto& Parameter : InParameters)
 	{
-		LogableCommand += TEXT(" ");
-		LogableCommand += Parameter;
+		LoggableCommand += TEXT(" ");
+		LoggableCommand += Parameter;
 	}
 	for(const auto& File : InFiles)
 	{
-		LogableCommand += TEXT(" \"");
-		LogableCommand += File;
-		LogableCommand += TEXT("\"");
+		LoggableCommand += TEXT(" \"");
+		LoggableCommand += File;
+		LoggableCommand += TEXT("\"");
 	}
 	// Also, Git does not have a "--non-interactive" option, as it auto-detects when there are no connected standard input/output streams
 
-	FullCommand += LogableCommand;
-
+	FullCommand += LoggableCommand;
+	
 #if UE_BUILD_DEBUG
-	UE_LOG(LogSourceControl, Log, TEXT("RunCommandInternalRaw: 'git %s'"), *LogableCommand);
+	UE_LOG(LogSourceControl, Log, TEXT("RunCommandInternalRaw: '%s %s'"), *InPathToBinary, *LoggableCommand);
 #endif
-
-	FString PathToGitOrEnvBinary = InPathToGitBinary;
+	
 #if PLATFORM_MAC
 	// The Cocoa application does not inherit shell environment variables, so add the path expected to have git-lfs to PATH
 	FString PathEnv = FPlatformMisc::GetEnvironmentVariable(TEXT("PATH"));
-	FString GitInstallPath = FPaths::GetPath(InPathToGitBinary);
+	FString GitInstallPath = FPaths::GetPath(InPathToBinary);
 
 	TArray<FString> PathArray;
 	PathEnv.ParseIntoArray(PathArray, FPlatformMisc::GetPathVarDelimiter());
@@ -123,10 +124,10 @@ static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPat
 	if (!bHasGitInstallPath)
 	{
 		PathToGitOrEnvBinary = FString("/usr/bin/env");
-		FullCommand = FString::Printf(TEXT("PATH=\"%s%s%s\" \"%s\" %s"), *GitInstallPath, FPlatformMisc::GetPathVarDelimiter(), *PathEnv, *InPathToGitBinary, *FullCommand);
+		FullCommand = FString::Printf(TEXT("PATH=\"%s%s%s\" \"%s\" %s"), *GitInstallPath, FPlatformMisc::GetPathVarDelimiter(), *PathEnv, *InPathToBinary, *FullCommand);
 	}
 #endif
-	FPlatformProcess::ExecProcess(*PathToGitOrEnvBinary, *FullCommand, &ReturnCode, &OutResults, &OutErrors);
+	FPlatformProcess::ExecProcess(*InPathToBinary, *FullCommand, &ReturnCode, &OutResults, &OutErrors);
 
 #if UE_BUILD_DEBUG
 
@@ -156,13 +157,12 @@ static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPat
 }
 
 // Basic parsing or results & errors from the Git command line process
-static bool RunCommandInternal(const FString& InCommand, const FString& InPathToGitBinary, const FString& InRepositoryRoot, const TArray<FString>& InParameters, const TArray<FString>& InFiles, TArray<FString>& OutResults, TArray<FString>& OutErrorMessages)
+static bool RunCommandInternal(const FString& InCommand, const FString& InPathToBinary, const FString& InRepositoryRoot, const TArray<FString>& InParameters, const TArray<FString>& InFiles, TArray<FString>& OutResults, TArray<FString>& OutErrorMessages)
 {
-	bool bResult;
 	FString Results;
 	FString Errors;
 
-	bResult = RunCommandInternalRaw(InCommand, InPathToGitBinary, InRepositoryRoot, InParameters, InFiles, Results, Errors);
+	const bool bResult = RunCommandInternalRaw(InCommand, InPathToBinary, InRepositoryRoot, InParameters, InFiles, Results, Errors);
 	Results.ParseIntoArray(OutResults, TEXT("\n"), true);
 	Errors.ParseIntoArray(OutErrorMessages, TEXT("\n"), true);
 
@@ -177,32 +177,32 @@ FString FindGitBinaryPath()
 	// If the PATH is set with "git/cmd" instead of "git/bin",
 	// "git.exe" launch "git/cmd/git.exe" that redirect to "git/bin/git.exe" and ExecProcess() is unable to catch its outputs streams.
 	// First check the 64-bit program files directory:
-	FString GitBinaryPath(TEXT("C:/Program Files/Git/bin/git.exe"));
-	bool bFound = CheckGitAvailability(GitBinaryPath);
+	FString BinaryPath(TEXT("C:/Program Files/Git/bin/git.exe"));
+	bool bFound = CheckGitAvailability(BinaryPath);
 	if(!bFound)
 	{
 		// otherwise check the 32-bit program files directory.
-		GitBinaryPath = TEXT("C:/Program Files (x86)/Git/bin/git.exe");
-		bFound = CheckGitAvailability(GitBinaryPath);
+		BinaryPath = TEXT("C:/Program Files (x86)/Git/bin/git.exe");
+		bFound = CheckGitAvailability(BinaryPath);
 	}
 	if(!bFound)
 	{
 		// else the install dir for the current user: C:\Users\UserName\AppData\Local\Programs\Git\cmd
-		FString AppDataLocalPath = FPlatformMisc::GetEnvironmentVariable(TEXT("LOCALAPPDATA"));
-		GitBinaryPath = FString::Printf(TEXT("%s/Programs/Git/cmd/git.exe"), *AppDataLocalPath);
-		bFound = CheckGitAvailability(GitBinaryPath);
+		const FString AppDataLocalPath = FPlatformMisc::GetEnvironmentVariable(TEXT("LOCALAPPDATA"));
+		BinaryPath = FString::Printf(TEXT("%s/Programs/Git/cmd/git.exe"), *AppDataLocalPath);
+		bFound = CheckGitAvailability(BinaryPath);
 	}
 
 	// 2) Else, look for the version of Git bundled with SmartGit "Installer with JRE"
 	if(!bFound)
 	{
-		GitBinaryPath = TEXT("C:/Program Files (x86)/SmartGit/git/bin/git.exe");
-		bFound = CheckGitAvailability(GitBinaryPath);
+		BinaryPath = TEXT("C:/Program Files (x86)/SmartGit/git/bin/git.exe");
+		bFound = CheckGitAvailability(BinaryPath);
 		if (!bFound)
 		{
 			// If git is not found in "git/bin/" subdirectory, try the "bin/" path that was in use before
-			GitBinaryPath = TEXT("C:/Program Files (x86)/SmartGit/bin/git.exe");
-			bFound = CheckGitAvailability(GitBinaryPath);
+			BinaryPath = TEXT("C:/Program Files (x86)/SmartGit/bin/git.exe");
+			bFound = CheckGitAvailability(BinaryPath);
 		}
 	}
 
@@ -210,9 +210,9 @@ FString FindGitBinaryPath()
 	if(!bFound)
 	{
 		// C:\Users\UserName\AppData\Local\Atlassian\SourceTree\git_local\bin
-		FString AppDataLocalPath = FPlatformMisc::GetEnvironmentVariable(TEXT("LOCALAPPDATA"));
-		GitBinaryPath = FString::Printf(TEXT("%s/Atlassian/SourceTree/git_local/bin/git.exe"), *AppDataLocalPath);
-		bFound = CheckGitAvailability(GitBinaryPath);
+		const FString AppDataLocalPath = FPlatformMisc::GetEnvironmentVariable(TEXT("LOCALAPPDATA"));
+		BinaryPath = FString::Printf(TEXT("%s/Atlassian/SourceTree/git_local/bin/git.exe"), *AppDataLocalPath);
+		bFound = CheckGitAvailability(BinaryPath);
 	}
 
 	// 4) Else, look for the PortableGit provided by GitHub Desktop
@@ -220,20 +220,20 @@ FString FindGitBinaryPath()
 	{
 		// The latest GitHub Desktop adds its binaries into the local appdata directory:
 		// C:\Users\UserName\AppData\Local\GitHub\PortableGit_c2ba306e536fdf878271f7fe636a147ff37326ad\cmd
-		FString AppDataLocalPath = FPlatformMisc::GetEnvironmentVariable(TEXT("LOCALAPPDATA"));
-		FString SearchPath = FString::Printf(TEXT("%s/GitHub/PortableGit_*"), *AppDataLocalPath);
+		const FString AppDataLocalPath = FPlatformMisc::GetEnvironmentVariable(TEXT("LOCALAPPDATA"));
+		const FString SearchPath = FString::Printf(TEXT("%s/GitHub/PortableGit_*"), *AppDataLocalPath);
 		TArray<FString> PortableGitFolders;
 		IFileManager::Get().FindFiles(PortableGitFolders, *SearchPath, false, true);
 		if(PortableGitFolders.Num() > 0)
 		{
 			// FindFiles just returns directory names, so we need to prepend the root path to get the full path.
-			GitBinaryPath = FString::Printf(TEXT("%s/GitHub/%s/cmd/git.exe"), *AppDataLocalPath, *(PortableGitFolders.Last())); // keep only the last PortableGit found
-			bFound = CheckGitAvailability(GitBinaryPath);
+			BinaryPath = FString::Printf(TEXT("%s/GitHub/%s/cmd/git.exe"), *AppDataLocalPath, *(PortableGitFolders.Last())); // keep only the last PortableGit found
+			bFound = CheckGitAvailability(BinaryPath);
 			if (!bFound)
 			{
 				// If Portable git is not found in "cmd/" subdirectory, try the "bin/" path that was in use before
-				GitBinaryPath = FString::Printf(TEXT("%s/GitHub/%s/bin/git.exe"), *AppDataLocalPath, *(PortableGitFolders.Last())); // keep only the last PortableGit found
-				bFound = CheckGitAvailability(GitBinaryPath);
+				BinaryPath = FString::Printf(TEXT("%s/GitHub/%s/bin/git.exe"), *AppDataLocalPath, *(PortableGitFolders.Last())); // keep only the last PortableGit found
+				bFound = CheckGitAvailability(BinaryPath);
 			}
 		}
 	}
@@ -241,34 +241,34 @@ FString FindGitBinaryPath()
 	// 5) Else, look for the version of Git bundled with Tower
 	if (!bFound)
 	{
-		GitBinaryPath = TEXT("C:/Program Files (x86)/fournova/Tower/vendor/Git/bin/git.exe");
-		bFound = CheckGitAvailability(GitBinaryPath);
+		BinaryPath = TEXT("C:/Program Files (x86)/fournova/Tower/vendor/Git/bin/git.exe");
+		bFound = CheckGitAvailability(BinaryPath);
 	}
 
 #elif PLATFORM_MAC
 	// 1) First of all, look for the version of git provided by official git
-	FString GitBinaryPath = TEXT("/usr/local/git/bin/git");
-	bool bFound = CheckGitAvailability(GitBinaryPath);
+	FString BinaryPath = TEXT("/usr/local/git/bin/git");
+	bool bFound = CheckGitAvailability(BinaryPath);
 
 	// 2) Else, look for the version of git provided by Homebrew
 	if (!bFound)
 	{
-		GitBinaryPath = TEXT("/usr/local/bin/git");
-		bFound = CheckGitAvailability(GitBinaryPath);
+		BinaryPath = TEXT("/usr/local/bin/git");
+		bFound = CheckGitAvailability(BinaryPath);
 	}
 
 	// 3) Else, look for the version of git provided by MacPorts
 	if (!bFound)
 	{
-		GitBinaryPath = TEXT("/opt/local/bin/git");
-		bFound = CheckGitAvailability(GitBinaryPath);
+		BinaryPath = TEXT("/opt/local/bin/git");
+		bFound = CheckGitAvailability(BinaryPath);
 	}
 
 	// 4) Else, look for the version of git provided by Command Line Tools
 	if (!bFound)
 	{
-		GitBinaryPath = TEXT("/usr/bin/git");
-		bFound = CheckGitAvailability(GitBinaryPath);
+		BinaryPath = TEXT("/usr/bin/git");
+		bFound = CheckGitAvailability(BinaryPath);
 	}
 
 	{
@@ -282,8 +282,8 @@ FString FindGitBinaryPath()
 			if (AppURL != nullptr)
 			{
 				NSBundle* Bundle = [NSBundle bundleWithURL:AppURL];
-				GitBinaryPath = FString::Printf(TEXT("%s/git/bin/git"), *FString([Bundle resourcePath]));
-				bFound = CheckGitAvailability(GitBinaryPath);
+				BinaryPath = FString::Printf(TEXT("%s/git/bin/git"), *FString([Bundle resourcePath]));
+				bFound = CheckGitAvailability(BinaryPath);
 			}
 		}
 
@@ -294,8 +294,8 @@ FString FindGitBinaryPath()
 			if (AppURL != nullptr)
 			{
 				NSBundle* Bundle = [NSBundle bundleWithURL:AppURL];
-				GitBinaryPath = FString::Printf(TEXT("%s/git_local/bin/git"), *FString([Bundle resourcePath]));
-				bFound = CheckGitAvailability(GitBinaryPath);
+				BinaryPath = FString::Printf(TEXT("%s/git_local/bin/git"), *FString([Bundle resourcePath]));
+				bFound = CheckGitAvailability(BinaryPath);
 			}
 		}
 
@@ -306,8 +306,8 @@ FString FindGitBinaryPath()
 			if (AppURL != nullptr)
 			{
 				NSBundle* Bundle = [NSBundle bundleWithURL:AppURL];
-				GitBinaryPath = FString::Printf(TEXT("%s/app/git/bin/git"), *FString([Bundle resourcePath]));
-				bFound = CheckGitAvailability(GitBinaryPath);
+				BinaryPath = FString::Printf(TEXT("%s/app/git/bin/git"), *FString([Bundle resourcePath]));
+				bFound = CheckGitAvailability(BinaryPath);
 			}
 		}
 
@@ -318,35 +318,99 @@ FString FindGitBinaryPath()
 			if (AppURL != nullptr)
 			{
 				NSBundle* Bundle = [NSBundle bundleWithURL:AppURL];
-				GitBinaryPath = FString::Printf(TEXT("%s/git/bin/git"), *FString([Bundle resourcePath]));
-				bFound = CheckGitAvailability(GitBinaryPath);
+				BinaryPath = FString::Printf(TEXT("%s/git/bin/git"), *FString([Bundle resourcePath]));
+				bFound = CheckGitAvailability(BinaryPath);
 			}
 		}
 	}
 
 #else
-	FString GitBinaryPath = TEXT("/usr/bin/git");
-	bool bFound = CheckGitAvailability(GitBinaryPath);
+	FString BinaryPath = TEXT("/usr/bin/git");
+	bool bFound = CheckGitAvailability(BinaryPath);
 #endif
 
 	if(bFound)
 	{
-		FPaths::MakePlatformFilename(GitBinaryPath);
+		FPaths::MakePlatformFilename(BinaryPath);
 	}
 	else
 	{
 		// If we did not find a path to Git, set it empty
-		GitBinaryPath.Empty();
+		BinaryPath.Empty();
 	}
 
-	return GitBinaryPath;
+	return BinaryPath;
 }
 
-bool CheckGitAvailability(const FString& InPathToGitBinary, FGitVersion *OutVersion)
+FString FindGitalongBinaryPath()
+{
+#if PLATFORM_WINDOWS
+	// Look into standard install directories
+	FString BinaryPath(TEXT("C:/Program Files/Gitalong/gitalong.exe"));
+	bool bFound = CheckGitalongAvailability(BinaryPath);
+	if(!bFound)
+	{
+		// otherwise check the 32-bit program files directory.
+		BinaryPath = TEXT("C:/Program Files (x86)/Gitalong/gitalong.exe");
+		bFound = CheckGitalongAvailability(BinaryPath);
+	}
+	if(!bFound)
+	{
+		// else the install dir for the current user: C:\Users\UserName\AppData\Local\Programs\Git\cmd
+		const FString AppDataLocalPath = FPlatformMisc::GetEnvironmentVariable(TEXT("LOCALAPPDATA"));
+		BinaryPath = FString::Printf(TEXT("%s/Programs/Gitalong/gitalong.exe"), *AppDataLocalPath);
+		bFound = CheckGitalongAvailability(BinaryPath);
+	}
+	
+#elif PLATFORM_MAC
+	// 1) First of all, look for the version of git provided by official git
+	FString BinaryPath = TEXT("/usr/local/bin/gitalong");
+	bool bFound = CheckGitalongAvailability(BinaryPath);
+
+	// 2) Else, look for the version of git provided by Homebrew
+	if (!bFound)
+	{
+		BinaryPath = TEXT("/usr/local/bin/gitalong");
+		bFound = CheckGitalongAvailability(BinaryPath);
+	}
+
+	// 3) Else, look for the version of git provided by MacPorts
+	if (!bFound)
+	{
+		BinaryPath = TEXT("/opt/local/bin/gitalong");
+		bFound = CheckGitalongAvailability(BinaryPath);
+	}
+
+	// 4) Else, look for the version of git provided by Command Line Tools
+	if (!bFound)
+	{
+		BinaryPath = TEXT("/usr/bin/gitalong");
+		bFound = CheckGitalongAvailability(BinaryPath);
+	}
+	
+#else
+	FString BinaryPath = TEXT("/usr/bin/gitalong");
+	bool bFound = CheckGitalongAvailability(BinaryPath);
+#endif
+
+	if(bFound)
+	{
+		FPaths::MakePlatformFilename(BinaryPath);
+	}
+	else
+	{
+		// If we did not find a path to Git, set it empty
+		BinaryPath.Empty();
+	}
+
+	return BinaryPath;
+}
+
+bool CheckGitAvailability(const FString& InPathToBinary, FGitVersion *OutVersion)
 {
 	FString InfoMessages;
 	FString ErrorMessages;
-	bool bGitAvailable = RunCommandInternalRaw(TEXT("version"), InPathToGitBinary, FString(), TArray<FString>(), TArray<FString>(), InfoMessages, ErrorMessages);
+	bool bGitAvailable = RunCommandInternalRaw(TEXT("version"), InPathToBinary, FString(), TArray<FString>(), TArray<FString>(), InfoMessages, ErrorMessages);
 	if(bGitAvailable)
 	{
 		if(!InfoMessages.Contains("git"))
@@ -356,12 +420,38 @@ bool CheckGitAvailability(const FString& InPathToGitBinary, FGitVersion *OutVers
 		else if(OutVersion)
 		{
 			ParseGitVersion(InfoMessages, OutVersion);
-			FindGitCapabilities(InPathToGitBinary, OutVersion);
-			FindGitLfsCapabilities(InPathToGitBinary, OutVersion);
+			FindGitCapabilities(InPathToBinary, OutVersion);
+			FindGitLfsCapabilities(InPathToBinary, OutVersion);
 		}
 	}
 
+	if (bGitAvailable)
+	{
+		// Gitalong will need this to find the Git binary.
+		// FPlatformMisc::SetEnvironmentVar(TEXT("GIT_PYTHON_REFRESH"), *FString("quiet"));
+		FPlatformMisc::SetEnvironmentVar(TEXT("GIT_PYTHON_GIT_EXECUTABLE"), *InPathToBinary);
+	}
 	return bGitAvailable;
+}
+
+bool CheckGitalongAvailability(const FString& InPathToBinary, FGitVersion *OutVersion)
+{
+	FString InfoMessages;
+	FString ErrorMessages;
+	bool bGitalongAvailable = RunCommandInternalRaw(TEXT("version"), InPathToBinary, FString(), TArray<FString>(), TArray<FString>(), InfoMessages, ErrorMessages);
+	if(bGitalongAvailable)
+	{
+		if(!InfoMessages.Contains("gitalong"))
+		{
+			bGitalongAvailable = false;
+		}
+		else if(OutVersion)
+		{
+			ParseGitVersion(InfoMessages, OutVersion);
+		}
+	}
+
+	return bGitalongAvailable;
 }
 
 void ParseGitVersion(const FString& InVersionString, FGitVersion *OutVersion) 
@@ -388,11 +478,11 @@ void ParseGitVersion(const FString& InVersionString, FGitVersion *OutVersion)
 	}
 }
 
-void FindGitCapabilities(const FString& InPathToGitBinary, FGitVersion *OutVersion)
+void FindGitCapabilities(const FString& InPathToBinary, FGitVersion *OutVersion)
 {
 	FString InfoMessages;
 	FString ErrorMessages;
-	RunCommandInternalRaw(TEXT("cat-file -h"), InPathToGitBinary, FString(), TArray<FString>(), TArray<FString>(), InfoMessages, ErrorMessages);
+	RunCommandInternalRaw(TEXT("cat-file -h"), InPathToBinary, FString(), TArray<FString>(), TArray<FString>(), InfoMessages, ErrorMessages);
 	if (InfoMessages.Contains("--filters"))
 	{
 		OutVersion->bHasCatFileWithFilters = true;
@@ -533,7 +623,7 @@ bool GetRemoteUrl(const FString& InPathToGitBinary, const FString& InRepositoryR
 	return bResults;
 }
 
-bool RunCommand(const FString& InCommand, const FString& InPathToGitBinary, const FString& InRepositoryRoot, const TArray<FString>& InParameters, const TArray<FString>& InFiles, TArray<FString>& OutResults, TArray<FString>& OutErrorMessages)
+bool RunCommand(const FString& InCommand, const FString& InPathToBinary, const FString& InRepositoryRoot, const TArray<FString>& InParameters, const TArray<FString>& InFiles, TArray<FString>& OutResults, TArray<FString>& OutErrorMessages)
 {
 	bool bResult = true;
 
@@ -551,14 +641,14 @@ bool RunCommand(const FString& InCommand, const FString& InPathToGitBinary, cons
 
 			TArray<FString> BatchResults;
 			TArray<FString> BatchErrors;
-			bResult &= RunCommandInternal(InCommand, InPathToGitBinary, InRepositoryRoot, InParameters, FilesInBatch, BatchResults, BatchErrors);
+			bResult &= RunCommandInternal(InCommand, InPathToBinary, InRepositoryRoot, InParameters, FilesInBatch, BatchResults, BatchErrors);
 			OutResults += BatchResults;
 			OutErrorMessages += BatchErrors;
 		}
 	}
 	else
 	{
-		bResult &= RunCommandInternal(InCommand, InPathToGitBinary, InRepositoryRoot, InParameters, InFiles, OutResults, OutErrorMessages);
+		bResult &= RunCommandInternal(InCommand, InPathToBinary, InRepositoryRoot, InParameters, InFiles, OutResults, OutErrorMessages);
 	}
 
 	return bResult;
@@ -642,6 +732,30 @@ static FString FilenameFromGitStatus(const FString& InResult)
 	}
 }
 
+/**
+ * @brief Extract the relative filename from a Gitalong status result.
+ *
+ * Example of Gitalong status: <status> <filename> <commit> <branches> <host> <author>
+++- Content/Textures/T_Perlin_Noise_M.uasset 0e3948fc383db8a0eb7081068d69f4f20a348a93 feature-a,feature-b epic1 Tim Sweeney
+--+ Content/Textures/T_Perlin_Noise_M.uasset 0 feature-a epic1 Tim Sweeney
+=== Content/Materials/M_Basic_Wall.uasset
+ *
+ * @param[in] InResult One line of status
+ * @return Relative filename extracted from the line of status
+ *
+ * @see FGitStatusFileMatcher and StateFromGitStatus()
+ */
+static FString FilenameFromGitalongStatus(const FString& InResult)
+{
+	TArray<FString> Splits;
+	InResult.ParseIntoArray(Splits, TEXT(" "));
+	if (Splits.Num() > 1)
+	{
+		return Splits[1];
+	}
+	return FString("");
+}
+
 /** Match the relative filename of a Git status result with a provided absolute filename */
 class FGitStatusFileMatcher
 {
@@ -654,6 +768,24 @@ public:
 	bool operator()(const FString& InResult) const
 	{
 		return AbsoluteFilename.Contains(FilenameFromGitStatus(InResult));
+	}
+
+private:
+	const FString& AbsoluteFilename;
+};
+
+/** Match the relative filename of a Gitalong status result with a provided absolute filename */
+class FGitalongStatusFileMatcher
+{
+public:
+	FGitalongStatusFileMatcher(const FString& InAbsoluteFilename)
+		: AbsoluteFilename(InAbsoluteFilename)
+	{
+	}
+
+	bool operator()(const FString& InResult) const
+	{
+		return AbsoluteFilename.Contains(FilenameFromGitalongStatus(InResult));
 	}
 
 private:
@@ -678,8 +810,8 @@ class FGitStatusParser
 public:
 	FGitStatusParser(const FString& InResult)
 	{
-		TCHAR IndexState = InResult[0];
-		TCHAR WCopyState = InResult[1];
+		const TCHAR IndexState = InResult[0];
+		const TCHAR WCopyState = InResult[1];
 		if(   (IndexState == 'U' || WCopyState == 'U')
 		   || (IndexState == 'A' && WCopyState == 'A')
 		   || (IndexState == 'D' && WCopyState == 'D'))
@@ -728,6 +860,104 @@ public:
 	}
 
 	EWorkingCopyState::Type State;
+};
+
+/**
+ * Extract and interpret the file state from the given Gitalong get-missing-commit result.
+ * Example of Gitalong status: <status> <filename> <commit> <branches> <host> <author>
+++- Content/Textures/T_Perlin_Noise_M.uasset 0e3948fc383db8a0eb7081068d69f4f20a348a93 feature-a,feature-b epic1 Tim Sweeney
+--+ Content/Textures/T_Perlin_Noise_M.uasset 0 feature-a epic1 Tim Sweeney
+=== Content/Materials/M_Basic_Wall.uasset
+*/
+class FGitalongStatusParser
+{
+public:
+	FGitalongStatusParser(const FString& InResult)
+	{
+		TArray<FString> Splits;
+		// @todo This space split parsing won't support filenames with spaces.
+		InResult.ParseIntoArray(Splits, TEXT(" "));
+		LastCommitSpread = ECommitSpread::Unknown;
+		if (Splits.Num() > 0)
+		{
+			if (Splits[0][0] == '+')
+			{
+				LastCommitSpread |= ECommitSpread::LocalUncommitted;
+			}
+			if (Splits[0][1] == '+')
+			{
+				LastCommitSpread |= ECommitSpread::LocalActiveBranch;
+			}
+			if (Splits[0][2] == '+')
+			{
+				LastCommitSpread |= ECommitSpread::LocalOtherBranch;
+			}
+			if (Splits[0][3] == '+')
+			{
+				LastCommitSpread |= ECommitSpread::RemoteMatchingBranch;
+			}
+			if (Splits[0][4] == '+')
+			{
+				LastCommitSpread |= ECommitSpread::RemoteOtherBranch;
+			}
+			if (Splits[0][5] == '+')
+			{
+				LastCommitSpread |= ECommitSpread::CloneOtherBranch;
+			}
+			if (Splits[0][6] == '+')
+			{
+				LastCommitSpread |= ECommitSpread::CloneMatchingBranch;
+			}
+			if (Splits[0][7] == '+')
+			{
+				LastCommitSpread |= ECommitSpread::CloneUncommitted;
+			}
+			Splits.RemoveAt(0);
+		}
+		if (Splits.Num() > 0)
+		{
+			// Removing the filename which is the second item in the splits and that we already know.
+			Splits.RemoveAt(0);
+		}
+		if (Splits.Num() > 0)
+		{
+			LastCommitSha = Splits[0] == "-" ? "" : Splits[0];
+			Splits.RemoveAt(0);
+		}
+		if (Splits.Num() > 0)
+		{
+			if (Splits[0] != "-")
+			{
+				Splits[0].ParseIntoArray(LastCommitLocalBranches, TEXT(","));
+			}
+			Splits.RemoveAt(0);
+		}
+		if (Splits.Num() > 0)
+		{
+			if (Splits[0] != "-")
+			{
+				Splits[0].ParseIntoArray(LastCommitRemoteBranches, TEXT(","));;
+			}
+			Splits.RemoveAt(0);
+		}
+		if (Splits.Num() > 0)
+		{
+			LastCommitHost = Splits[0] == "-" ? "" : Splits[0];
+			Splits.RemoveAt(0);
+		}
+		if (Splits.Num() > 0)
+		{
+			// The remainder of the splits are the author.
+			LastCommitAuthor = (FString::Join(Splits, TEXT(" "))).LeftChop(1);
+		}
+	}
+	ECommitSpread LastCommitSpread;
+	FString LastCommitSha;
+	TArray<FString> LastCommitLocalBranches;
+	TArray<FString> LastCommitRemoteBranches;
+	FString LastCommitHost;
+	FString LastCommitAuthor;
+
 };
 
 /**
@@ -806,7 +1036,7 @@ R  Content/Textures/T_Perlin_Noise_M.uasset -> Content/Textures/T_Perlin_Noise_M
 ?? Content/Materials/M_Basic_Wall.uasset
 !! BasicCode.sln
 */
-static void ParseFileStatusResult(const FString& InPathToGitBinary, const FString& InRepositoryRoot, const TArray<FString>& InFiles, const TArray<FString>& InResults, TArray<FGitSourceControlState>& OutStates)
+static void ParseFileStatusResult(const FString& InPathToGitBinary, const FString& InPathToGitalongBinary, const FString& InRepositoryRoot, const TArray<FString>& InFiles, const TArray<FString>& InResults, const TArray<FString>& InGitalongResults, TArray<FGitSourceControlState>& OutStates)
 {
 	const FDateTime Now = FDateTime::Now();
 
@@ -814,12 +1044,26 @@ static void ParseFileStatusResult(const FString& InPathToGitBinary, const FStrin
 	for(const auto& File : InFiles)
 	{
 		FGitSourceControlState FileState(File);
+
 		// Search the file in the list of status
-		int32 IdxResult = InResults.IndexOfByPredicate(FGitStatusFileMatcher(File));
+		const int32 IdxGitalongResult = InGitalongResults.IndexOfByPredicate(FGitalongStatusFileMatcher(File));
+		if(IdxGitalongResult != INDEX_NONE)
+		{
+			const FGitalongStatusParser StatusParser(InGitalongResults[IdxGitalongResult]);
+			FileState.LastCommitSpread = StatusParser.LastCommitSpread;
+			FileState.LastCommitSha = StatusParser.LastCommitSha;
+			FileState.LastCommitLocalBranches = StatusParser.LastCommitLocalBranches;
+			FileState.LastCommitRemoteBranches = StatusParser.LastCommitRemoteBranches;
+			FileState.LastCommitHost = StatusParser.LastCommitHost;
+			FileState.LastCommitAuthor = StatusParser.LastCommitAuthor;
+		}
+
+		// Search the file in the list of status
+		const int32 IdxResult = InResults.IndexOfByPredicate(FGitStatusFileMatcher(File));
 		if(IdxResult != INDEX_NONE)
 		{
 			// File found in status results; only the case for "changed" files
-			FGitStatusParser StatusParser(InResults[IdxResult]);
+			const FGitStatusParser StatusParser(InResults[IdxResult]);
 			FileState.WorkingCopyState = StatusParser.State;
 			if(FileState.IsConflicted())
 			{
@@ -878,13 +1122,15 @@ static void ParseDirectoryStatusResult(const FString& InPathToGitBinary, const F
  *  It is either a command for a whole directory (ie. "Content/", in case of "Submit to Source Control" menu),
  * or for one or more files all on a same directory (by design, since we group files by directory in RunUpdateStatus())
  *
- * @param[in]	InPathToGitBinary	The path to the Git binary
- * @param[in]	InRepositoryRoot	The Git repository from where to run the command - usually the Game directory (can be empty)
- * @param[in]	InFiles				List of files in a directory, or the path to the directory itself (never empty).
- * @param[out]	InResults			Results from the "status" command
- * @param[out]	OutStates			States of files for witch the status has been gathered (distinct than InFiles in case of a "directory status")
+ * @param[in]	InPathToGitBinary		The path to the Git binary
+ * @param[in]	InPathToGitalongBinary	The path to the Gitalong binary
+ * @param[in]	InRepositoryRoot		The Git repository from where to run the command - usually the Game directory (can be empty)
+ * @param[in]	InFiles					List of files in a directory, or the path to the directory itself (never empty).
+ * @param[out]	InResults				Results from the "status" command
+ * @param[out]	InGitalongResults		Results from the gitalong command
+ * @param[out]	OutStates				States of files for witch the status has been gathered (distinct than InFiles in case of a "directory status")
  */
-static void ParseStatusResults(const FString& InPathToGitBinary, const FString& InRepositoryRoot, const TArray<FString>& InFiles, const TArray<FString>& InResults, TArray<FGitSourceControlState>& OutStates)
+static void ParseStatusResults(const FString& InPathToGitBinary, const FString& InPathToGitalongBinary, const FString& InRepositoryRoot, const TArray<FString>& InFiles, const TArray<FString>& InResults, const TArray<FString>& InGitalongResults, TArray<FGitSourceControlState>& OutStates)
 {
 	if(1 == InFiles.Num() && FPaths::DirectoryExists(InFiles[0]))
 	{
@@ -892,10 +1138,9 @@ static void ParseStatusResults(const FString& InPathToGitBinary, const FString& 
 		//   (this is triggered by the "Submit to Source Control" menu)
 		TArray<FString> Files;
 		const FString& Directory = InFiles[0];
-		const bool bResult = ListFilesInDirectoryRecurse(InPathToGitBinary, InRepositoryRoot, Directory, Files);
-		if(bResult)
+		if(const bool bResult = ListFilesInDirectoryRecurse(InPathToGitBinary, InRepositoryRoot, Directory, Files))
 		{
-			ParseFileStatusResult(InPathToGitBinary, InRepositoryRoot, Files, InResults, OutStates);
+			ParseFileStatusResult(InPathToGitBinary, InPathToGitalongBinary, InRepositoryRoot, Files, InResults, InGitalongResults, OutStates);
 		}
 		// The above cannot detect deleted assets since there is no file left to enumerate (either by the Content Browser or by git ls-files)
 		// => so we also parse the status results to explicitly look for Deleted/Missing assets
@@ -904,12 +1149,12 @@ static void ParseStatusResults(const FString& InPathToGitBinary, const FString& 
 	else
 	{
 		// 2) General case for one or more files in the same directory.
-		ParseFileStatusResult(InPathToGitBinary, InRepositoryRoot, InFiles, InResults, OutStates);
+		ParseFileStatusResult(InPathToGitBinary, InPathToGitalongBinary, InRepositoryRoot, InFiles, InResults, InGitalongResults, OutStates);
 	}
 }
 
 // Run a batch of Git "status" command to update status of given files and/or directories.
-bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InRepositoryRoot, const TArray<FString>& InFiles, TArray<FString>& OutErrorMessages, TArray<FGitSourceControlState>& OutStates)
+bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InPathToGitalongBinary, const FString& InRepositoryRoot, const TArray<FString>& InFiles, TArray<FString>& OutErrorMessages, TArray<FGitSourceControlState>& OutStates)
 {
 	bool bResults = true;
 	TArray<FString> Results;
@@ -917,6 +1162,9 @@ bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InReposito
 	Parameters.Add(TEXT("--porcelain"));
 	Parameters.Add(TEXT("--ignored"));
 
+	TArray<FString> GitalongResults;
+	TArray<FString> GitalongParameters;
+	
 	// Git status does not show any "untracked files" when called with files from different subdirectories! (issue #3)
 	// 1) So here we group files by path (ie. by subdirectory)
 	TMap<FString, TArray<FString>> GroupOfFiles;
@@ -953,14 +1201,16 @@ bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InReposito
 			OnePath.Add(Path);
 		}
 		TArray<FString> ErrorMessages;
+		
 		const bool bResult = RunCommand(TEXT("status"), InPathToGitBinary, InRepositoryRoot, Parameters, OnePath, Results, ErrorMessages);
 		OutErrorMessages.Append(ErrorMessages);
 		if(bResult)
 		{
-			ParseStatusResults(InPathToGitBinary, InRepositoryRoot, Files.Value, Results, OutStates);
+			TArray<FString> GitalongErrorMessages;
+			RunCommand(TEXT("status"), InPathToGitalongBinary, InRepositoryRoot, GitalongParameters, InFiles, GitalongResults, GitalongErrorMessages);
+			ParseStatusResults(InPathToGitBinary, InPathToGitalongBinary, InRepositoryRoot, Files.Value, Results, GitalongResults, OutStates);
 		}
 	}
-
 	return bResults;
 }
 
@@ -1284,11 +1534,17 @@ bool UpdateCachedStates(const TArray<FGitSourceControlState>& InStates)
 	for(const auto& InState : InStates)
 	{
 		TSharedRef<FGitSourceControlState, ESPMode::ThreadSafe> State = Provider.GetStateInternal(InState.LocalFilename);
-		if(State->WorkingCopyState != InState.WorkingCopyState)
+		if(State->WorkingCopyState != InState.WorkingCopyState || State->LastCommitSpread != InState.LastCommitSpread)
 		{
 			State->WorkingCopyState = InState.WorkingCopyState;
 			State->PendingMergeBaseFileHash = InState.PendingMergeBaseFileHash;
 		//	State->TimeStamp = InState.TimeStamp; // @todo Bug report: Workaround a bug with the Source Control Module not updating file state after a "Save"
+			State->LastCommitSpread = InState.LastCommitSpread;
+			State->LastCommitSha =  InState.LastCommitSha;
+			State->LastCommitRemoteBranches = InState.LastCommitRemoteBranches;
+			State->LastCommitLocalBranches = InState.LastCommitRemoteBranches;
+			State->LastCommitHost = InState.LastCommitHost;
+			State->LastCommitAuthor = InState.LastCommitAuthor;
 			NbStatesUpdated++;
 		}
 	}

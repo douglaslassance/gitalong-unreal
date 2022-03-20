@@ -22,6 +22,13 @@ const FString FGitSourceControlSettings::GetBinaryPath() const
 	return BinaryPath;
 }
 
+const FString FGitSourceControlSettings::GetGitalongBinaryPath() const
+{
+	FScopeLock ScopeLock(&CriticalSection);
+	return GitalongBinaryPath;
+}
+
+
 bool FGitSourceControlSettings::SetBinaryPath(const FString& InString)
 {
 	FScopeLock ScopeLock(&CriticalSection);
@@ -33,12 +40,24 @@ bool FGitSourceControlSettings::SetBinaryPath(const FString& InString)
 	return bChanged;
 }
 
+bool FGitSourceControlSettings::SetGitalongBinaryPath(const FString& InString)
+{
+	FScopeLock ScopeLock(&CriticalSection);
+	const bool bChanged = (GitalongBinaryPath != InString);
+	if(bChanged)
+	{
+		GitalongBinaryPath = InString;
+	}
+	return bChanged;
+}
+
 // This is called at startup nearly before anything else in our module: BinaryPath will then be used by the provider
 void FGitSourceControlSettings::LoadSettings()
 {
 	FScopeLock ScopeLock(&CriticalSection);
 	const FString& IniFile = SourceControlHelpers::GetSettingsIni();
 	GConfig->GetString(*GitSettingsConstants::SettingsSection, TEXT("BinaryPath"), BinaryPath, IniFile);
+	GConfig->GetString(*GitSettingsConstants::SettingsSection, TEXT("GitalongBinaryPath"), GitalongBinaryPath, IniFile);
 }
 
 void FGitSourceControlSettings::SaveSettings() const
@@ -46,4 +65,5 @@ void FGitSourceControlSettings::SaveSettings() const
 	FScopeLock ScopeLock(&CriticalSection);
 	const FString& IniFile = SourceControlHelpers::GetSettingsIni();
 	GConfig->SetString(*GitSettingsConstants::SettingsSection, TEXT("BinaryPath"), *BinaryPath, IniFile);
+	GConfig->SetString(*GitSettingsConstants::SettingsSection, TEXT("GitalongBinaryPath"), *GitalongBinaryPath, IniFile);
 }

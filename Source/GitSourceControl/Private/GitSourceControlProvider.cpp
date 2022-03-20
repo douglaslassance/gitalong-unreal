@@ -18,7 +18,7 @@
 
 #define LOCTEXT_NAMESPACE "GitSourceControl"
 
-static FName ProviderName("Git");
+static FName ProviderName("Gitalong");
 
 void FGitSourceControlProvider::Init(bool bForceConnection)
 {
@@ -28,7 +28,22 @@ void FGitSourceControlProvider::Init(bool bForceConnection)
 		CheckGitAvailability();
 	}
 
+	if(!bGitalongAvailable)
+	{
+		CheckGitalongAvailability();
+	}
+
 	// bForceConnection: not used anymore
+
+	if(bGitalongAvailable)
+	{
+		// Bind Gitalong sync to save event
+		if (!UPackage::PackageSavedEvent.IsBoundToObject(this))
+		{
+			UE_LOG(LogSourceControl, Log, TEXT("Binding FGitSourceControlProvider::HandleOnPackageSaveEvent to PackageSavedEvent"));
+			OnPackageSaveEventHandle = UPackage::PackageSavedEvent.AddRaw(this, &FGitSourceControlProvider::HandleOnPackageSaveEvent);
+		}
+	}
 }
 
 void FGitSourceControlProvider::CheckGitAvailability()
@@ -56,6 +71,30 @@ void FGitSourceControlProvider::CheckGitAvailability()
 	else
 	{
 		bGitAvailable = false;
+	}
+}
+
+void FGitSourceControlProvider::CheckGitalongAvailability()
+{
+	FGitSourceControlModule& GitSourceControl = FModuleManager::LoadModuleChecked<FGitSourceControlModule>("GitSourceControl");
+	PathToGitalongBinary = GitSourceControl.AccessSettings().GetGitalongBinaryPath();
+	if(PathToGitalongBinary.IsEmpty())
+	{
+		// Try to find Git binary, and update settings accordingly
+		PathToGitalongBinary = GitSourceControlUtils::FindGitalongBinaryPath();
+		if(!PathToGitalongBinary.IsEmpty())
+		{
+			GitSourceControl.AccessSettings().SetGitalongBinaryPath(PathToGitalongBinary);
+		}
+	}
+
+	if(!PathToGitalongBinary.IsEmpty())
+	{
+		bGitalongAvailable = GitSourceControlUtils::CheckGitalongAvailability(PathToGitalongBinary, &GitalongVersion);
+	}
+	else
+	{
+		bGitalongAvailable = false;
 	}
 }
 
@@ -95,6 +134,29 @@ void FGitSourceControlProvider::Close()
 	bGitRepositoryFound = false;
 	UserName.Empty();
 	UserEmail.Empty();
+
+	// Unbind Gitalong sync from save event
+	UE_LOG(LogSourceControl, Log, TEXT("Unbinding FGitSourceControlProvider::HandleOnPackageSaveEvent to PackageSavedEvent"));
+	UPackage::PackageSavedEvent.Remove(OnPackageSaveEventHandle);
+}
+
+void FGitSourceControlProvider::HandleOnPackageSaveEvent(const FString& PackageFilename, UObject* Outer)
+{
+	TArray<FString> InResults;
+	TArray<FString> InErrorMessages;
+	TArray<FString> InFiles;
+	
+	const FString FullPath = FPaths::ConvertRelativePathToFull(PackageFilename);
+	InFiles.Add(FullPath);
+
+	if (PendingSaves.Contains(FullPath))
+	{
+		PendingSaves.Remove(FullPath);
+	}
+
+	// @todo Check if Gitalong preferences are set to not track uncommitted files in which case this not necessary.
+	// @todo This is not ideal as the Gitalong sync is expensive and we are running of each file saved.
+	GitSourceControlUtils::RunCommand(TEXT("sync"), GitSourceControlUtils::FindGitalongBinaryPath(), FullPath, TArray<FString>(), InFiles, InResults, InErrorMessages);
 }
 
 TSharedRef<FGitSourceControlState, ESPMode::ThreadSafe> FGitSourceControlProvider::GetStateInternal(const FString& Filename)
@@ -203,17 +265,17 @@ ECommandResult::Type FGitSourceControlProvider::Execute( const TSharedRef<ISourc
 		return ECommandResult::Failed;
 	}
 
-	TArray<FString> AbsoluteFiles = SourceControlHelpers::AbsoluteFilenames(InFiles);
+	const TArray<FString> AbsoluteFiles = SourceControlHelpers::AbsoluteFilenames(InFiles);
 
 	// Query to see if we allow this operation
-	TSharedPtr<IGitSourceControlWorker, ESPMode::ThreadSafe> Worker = CreateWorker(InOperation->GetName());
+	const TSharedPtr<IGitSourceControlWorker, ESPMode::ThreadSafe> Worker = CreateWorker(InOperation->GetName());
 	if(!Worker.IsValid())
 	{
 		// this operation is unsupported by this source control provider
 		FFormatNamedArguments Arguments;
 		Arguments.Add( TEXT("OperationName"), FText::FromName(InOperation->GetName()) );
 		Arguments.Add( TEXT("ProviderName"), FText::FromName(GetName()) );
-		FText Message(FText::Format(LOCTEXT("UnsupportedOperation", "Operation '{OperationName}' not supported by source control provider '{ProviderName}'"), Arguments));
+		const FText Message(FText::Format(LOCTEXT("UnsupportedOperation", "Operation '{OperationName}' not supported by source control provider '{ProviderName}'"), Arguments));
 		FMessageLog("SourceControl").Error(Message);
 		InOperation->AddErrorMessge(Message);
 
@@ -229,11 +291,13 @@ ECommandResult::Type FGitSourceControlProvider::Execute( const TSharedRef<ISourc
 	if(InConcurrency == EConcurrency::Synchronous)
 	{
 		Command->bAutoDelete = false;
+		UE_LOG(LogSourceControl, Log, TEXT("ExecuteSynchronousCommand(%s)"), *InOperation->GetName().ToString());
 		return ExecuteSynchronousCommand(*Command, InOperation->GetInProgressString());
 	}
 	else
 	{
 		Command->bAutoDelete = true;
+		UE_LOG(LogSourceControl, Log, TEXT("IssueAsynchronousCommand(%s)"), *InOperation->GetName().ToString());
 		return IssueCommand(*Command);
 	}
 }
@@ -249,7 +313,8 @@ void FGitSourceControlProvider::CancelOperation( const TSharedRef<ISourceControl
 
 bool FGitSourceControlProvider::UsesLocalReadOnlyState() const
 {
-	return false;
+	// @todo Check Gitalong config to see if modify_permissions is true.
+	return true;
 }
 
 bool FGitSourceControlProvider::UsesChangelists() const
@@ -259,7 +324,7 @@ bool FGitSourceControlProvider::UsesChangelists() const
 
 bool FGitSourceControlProvider::UsesCheckout() const
 {
-	return false;
+	return true;
 }
 
 TSharedPtr<IGitSourceControlWorker, ESPMode::ThreadSafe> FGitSourceControlProvider::CreateWorker(const FName& InOperationName) const
@@ -401,7 +466,7 @@ ECommandResult::Type FGitSourceControlProvider::IssueCommand(FGitSourceControlCo
 	}
 	else
 	{
-		FText Message(LOCTEXT("NoSCCThreads", "There are no threads available to process the source control command."));
+		const FText Message(LOCTEXT("NoSCCThreads", "There are no threads available to process the source control command."));
 
 		FMessageLog("SourceControl").Error(Message);
 		InCommand.bCommandSuccessful = false;

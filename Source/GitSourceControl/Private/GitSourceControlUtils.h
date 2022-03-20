@@ -40,12 +40,26 @@ namespace GitSourceControlUtils
 FString FindGitBinaryPath();
 
 /**
+ * Find the path to the Gitalong binary, looking into a few places (standalone Gitalong install, and other common tools embedding Git)
+ * @returns the path to the Gitalong binary if found, or an empty string.
+ */
+FString FindGitalongBinaryPath();
+
+/**
  * Run a Git "version" command to check the availability of the binary.
- * @param InPathToGitBinary		The path to the Git binary
- * @param OutGitVersion         If provided, populate with the git version parsed from "version" command
+ * @param InPathToBinary		The path to the Git binary
+ * @param OutVersion         If provided, populate with the git version parsed from "version" command
  * @returns true if the command succeeded and returned no errors
  */
-bool CheckGitAvailability(const FString& InPathToGitBinary, FGitVersion* OutVersion = nullptr);
+bool CheckGitAvailability(const FString& InPathToBinary, FGitVersion* OutVersion = nullptr);
+
+/**
+ * Run a Gitalong "version" command to check the availability of the binary.
+ * @param InPathToBinary		The path to the Gitalong binary
+ * @param OutVersion         If provided, populate with the git version parsed from "version" command
+ * @returns true if the command succeeded and returned no errors
+ */
+bool CheckGitalongAvailability(const FString& InPathToBinary, FGitVersion* OutVersion = nullptr);
 
 /**
  * Parse the output from the "version" command into GitMajorVersion and GitMinorVersion.
@@ -107,7 +121,7 @@ bool GetRemoteUrl(const FString& InPathToGitBinary, const FString& InRepositoryR
  * Run a Git command - output is a string TArray.
  *
  * @param	InCommand			The Git command - e.g. commit
- * @param	InPathToGitBinary	The path to the Git binary
+ * @param	InPathToBinary		The path to the Git or Gitalong binary
  * @param	InRepositoryRoot	The Git repository from where to run the command - usually the Game directory (can be empty)
  * @param	InParameters		The parameters to the Git command
  * @param	InFiles				The files to be operated on
@@ -115,14 +129,14 @@ bool GetRemoteUrl(const FString& InPathToGitBinary, const FString& InRepositoryR
  * @param	OutErrorMessages	Any errors (from StdErr) as an array per-line
  * @returns true if the command succeeded and returned no errors
  */
-bool RunCommand(const FString& InCommand, const FString& InPathToGitBinary, const FString& InRepositoryRoot, const TArray<FString>& InParameters, const TArray<FString>& InFiles, TArray<FString>& OutResults, TArray<FString>& OutErrorMessages);
+bool RunCommand(const FString& InCommand, const FString& InPathToBinary, const FString& InRepositoryRoot, const TArray<FString>& InParameters, const TArray<FString>& InFiles, TArray<FString>& OutResults, TArray<FString>& OutErrorMessages);
 
 /**
  * Run a Git "commit" command by batches.
  *
  * @param	InPathToGitBinary	The path to the Git binary
  * @param	InRepositoryRoot	The Git repository from where to run the command - usually the Game directory
- * @param	InParameter			The parameters to the Git commit command
+ * @param	InParameters		The parameters to the Git commit command
  * @param	InFiles				The files to be operated on
  * @param	OutErrorMessages	Any errors (from StdErr) as an array per-line
  * @returns true if the command succeeded and returned no errors
@@ -132,13 +146,14 @@ bool RunCommit(const FString& InPathToGitBinary, const FString& InRepositoryRoot
 /**
  * Run a Git "status" command and parse it.
  *
- * @param	InPathToGitBinary	The path to the Git binary
- * @param	InRepositoryRoot	The Git repository from where to run the command - usually the Game directory (can be empty)
- * @param	InFiles				The files to be operated on
- * @param	OutErrorMessages	Any errors (from StdErr) as an array per-line
+ * @param	InPathToGitBinary		The path to the Git binary
+ * @param	InPathToGitalongBinary	The path to the Gitalong binary
+ * @param	InRepositoryRoot		The Git repository from where to run the command - usually the Game directory (can be empty)
+ * @param	InFiles					The files to be operated on
+ * @param	OutErrorMessages		Any errors (from StdErr) as an array per-line
  * @returns true if the command succeeded and returned no errors
  */
-bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InRepositoryRoot, const TArray<FString>& InFiles, TArray<FString>& OutErrorMessages, TArray<FGitSourceControlState>& OutStates);
+bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InPathToGitalongBinary, const FString& InRepositoryRoot, const TArray<FString>& InFiles, TArray<FString>& OutErrorMessages, TArray<FGitSourceControlState>& OutStates);
 
 /**
  * Run a Git "cat-file" command to dump the binary content of a revision into a file.

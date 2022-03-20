@@ -10,9 +10,15 @@ public:
 	/** Get the Git Binary Path */
 	const FString GetBinaryPath() const;
 
+	/** Get the Gitalong Binary Path */
+	const FString GetGitalongBinaryPath() const;
+	
 	/** Set the Git Binary Path */
 	bool SetBinaryPath(const FString& InString);
 
+	/** Set the Gitalong Binary Path */
+	bool SetGitalongBinaryPath(const FString& InString);
+	
 	/** Load settings from ini file */
 	void LoadSettings();
 
@@ -25,4 +31,7 @@ private:
 
 	/** Git binary path */
 	FString BinaryPath;
+
+	/** Git Gitalong binary path */
+	FString GitalongBinaryPath;
 };
