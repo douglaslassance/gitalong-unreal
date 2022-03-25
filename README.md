@@ -5,7 +5,7 @@ This a replacement for the built-in GitSourceControl Unreal plugin that integrat
 ## Pre-requisites
 
 - [Git >=2.35.1](https://git-scm.com/downloads)
-- [Gitalong >= 0.1.0.dev1](https://github.com/douglaslassance/gitalong-cli/releases)
+- [Gitalong](https://github.com/douglaslassance/gitalong-cli/)
 
 ## Installation
 
