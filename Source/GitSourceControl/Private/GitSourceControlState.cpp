@@ -183,12 +183,20 @@ FText FGitSourceControlState::GetDisplayName() const
 			return FText::Format(LOCTEXT("CheckedOutOther", "Missing commit {0} by {1}"), FText::FromString(LastCommitSha.Left(5)), FText::FromString(LastCommitAuthor));
 		}
 		if (IsCheckedOutInOtherBranch())
-		{
-			return FText::Format(LOCTEXT("CheckedOutInOtherBranch", "Missing commit {0} by {1} in {2} branch"), FText::FromString(LastCommitSha.Left(5)), FText::FromString(LastCommitAuthor), FText::FromString(LastCommitRemoteBranches[0]));
+		{	
+			FString Branch;
+			if (LastCommitRemoteBranches.Num()) 
+			{
+				Branch = LastCommitRemoteBranches[0];
+			} else if (LastCommitLocalBranches.Num()) 
+			{
+				Branch = LastCommitLocalBranches[0];
+			}
+			return FText::Format(LOCTEXT("CheckedOutInOtherBranch", "Missing commit {0} by {1} in {2} branch"), FText::FromString(LastCommitSha.Left(5)), FText::FromString(LastCommitAuthor), FText::FromString(Branch));
 		}
 		if (!IsCurrent())
 		{
-			return FText::Format(LOCTEXT("NotAtRevision", "Missing commit {0} in {1} remote branch"), FText::FromString(LastCommitSha.Left(5)), FText::FromString(LastCommitRemoteBranches[0]));
+			return FText::Format(LOCTEXT("NotAtRevision", "Missing commit {0} in remote branch"), FText::FromString(LastCommitSha.Left(5)));
 		}
 		return FText();
 	}
@@ -237,11 +245,19 @@ FText FGitSourceControlState::GetDisplayTooltip() const
 		}
 		if (IsCheckedOutInOtherBranch())
 		{
-			return FText::Format(LOCTEXT("CheckedOutInOtherBranch_Tooltip", "Missing commit {0} by {1} in {2} branch"), FText::FromString(LastCommitSha.Left(5)), FText::FromString(LastCommitAuthor), FText::FromString(LastCommitRemoteBranches[0]));
+			FString Branch;
+			if (LastCommitRemoteBranches.Num()) 
+			{
+				Branch = LastCommitRemoteBranches[0];
+			} else if (LastCommitLocalBranches.Num()) 
+			{
+				Branch = LastCommitLocalBranches[0];
+			}
+			return FText::Format(LOCTEXT("CheckedOutInOtherBranch_Tooltip", "Missing commit {0} by {1} in {2} branch"), FText::FromString(LastCommitSha.Left(5)), FText::FromString(LastCommitAuthor), FText::FromString(Branch));
 		}
 		if (!IsCurrent())
 		{
-			return FText::Format(LOCTEXT("NotAtRevision_Tooltip", "Missing commit {0} in {1} remote branch"), FText::FromString(LastCommitSha.Left(5)), FText::FromString(LastCommitRemoteBranches[0]));
+			return FText::Format(LOCTEXT("NotAtRevision_Tooltip", "Missing commit {0} in remote branch"), FText::FromString(LastCommitSha.Left(5)));
 		}
 		return FText();
 	}

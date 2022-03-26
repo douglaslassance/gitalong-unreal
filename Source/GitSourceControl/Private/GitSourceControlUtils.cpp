@@ -72,8 +72,8 @@ static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPat
 				RepositoryRoot = DestinationRepositoryRoot; // if found use it for the "add" command (else not, to avoid producing one more error in logs)
 			}
 		}
-		// @todo This is not safe as people could point to a Git executable not called git.exe.
-		if (InPathToBinary.Contains("git.exe"))
+		// @todo This is not safe as people could point to a Git executable not called "git" or "git.exe".
+		if (InPathToBinary.EndsWith("git") || InPathToBinary.EndsWith("git.exe"))
 		{
 			// Specify the working copy (the root) of the git repository (before the command itself)
 			FullCommand  = TEXT("-C \"");
@@ -107,24 +107,24 @@ static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPat
 #if PLATFORM_MAC
 	// The Cocoa application does not inherit shell environment variables, so add the path expected to have git-lfs to PATH
 	FString PathEnv = FPlatformMisc::GetEnvironmentVariable(TEXT("PATH"));
-	FString GitInstallPath = FPaths::GetPath(InPathToBinary);
+	FString InstallPath = FPaths::GetPath(InPathToBinary);
 
 	TArray<FString> PathArray;
 	PathEnv.ParseIntoArray(PathArray, FPlatformMisc::GetPathVarDelimiter());
-	bool bHasGitInstallPath = false;
+	bool bHasInstallPath = false;
 	for (auto Path : PathArray)
 	{
-		if (GitInstallPath.Equals(Path, ESearchCase::CaseSensitive))
+		if (InstallPath.Equals(Path, ESearchCase::CaseSensitive))
 		{
-			bHasGitInstallPath = true;
+			bHasInstallPath = true;
 			break;
 		}
 	}
 
-	if (!bHasGitInstallPath)
+	if (!bHasInstallPath)
 	{
-		PathToGitOrEnvBinary = FString("/usr/bin/env");
-		FullCommand = FString::Printf(TEXT("PATH=\"%s%s%s\" \"%s\" %s"), *GitInstallPath, FPlatformMisc::GetPathVarDelimiter(), *PathEnv, *InPathToBinary, *FullCommand);
+		InstallPath = FString("/usr/bin/env");
+		FullCommand = FString::Printf(TEXT("PATH=\"%s%s%s\" \"%s\" %s"), *InstallPath, FPlatformMisc::GetPathVarDelimiter(), *PathEnv, *InPathToBinary, *FullCommand);
 	}
 #endif
 	FPlatformProcess::ExecProcess(*InPathToBinary, *FullCommand, &ReturnCode, &OutResults, &OutErrors);
@@ -253,7 +253,7 @@ FString FindGitBinaryPath()
 	// 2) Else, look for the version of git provided by Homebrew
 	if (!bFound)
 	{
-		BinaryPath = TEXT("/usr/local/bin/git");
+		BinaryPath = TEXT("/opt/homebrew/bin/git");
 		bFound = CheckGitAvailability(BinaryPath);
 	}
 
@@ -361,6 +361,13 @@ FString FindGitalongBinaryPath()
 		BinaryPath = FString::Printf(TEXT("%s/Programs/Gitalong/gitalong.exe"), *AppDataLocalPath);
 		bFound = CheckGitalongAvailability(BinaryPath);
 	}
+	if(!bFound)
+	{
+		// else the Scoop install dir for the current user:
+		const FString UserProfilePath = FPlatformMisc::GetEnvironmentVariable(TEXT("USERPROFILE"));
+		BinaryPath = FString::Printf(TEXT("%s/scoop/gitalong.exe"), *UserProfilePath);
+		bFound = CheckGitalongAvailability(BinaryPath);
+	}
 	
 #elif PLATFORM_MAC
 	// 1) First of all, look for the version of git provided by official git
@@ -370,7 +377,7 @@ FString FindGitalongBinaryPath()
 	// 2) Else, look for the version of git provided by Homebrew
 	if (!bFound)
 	{
-		BinaryPath = TEXT("/usr/local/bin/gitalong");
+		BinaryPath = TEXT("/opt/homebrew/bin/gitalong");
 		bFound = CheckGitalongAvailability(BinaryPath);
 	}
 
@@ -948,7 +955,9 @@ public:
 		if (Splits.Num() > 0)
 		{
 			// The remainder of the splits are the author.
-			LastCommitAuthor = (FString::Join(Splits, TEXT(" "))).LeftChop(1);
+			FString Author = FString::Join(Splits, TEXT(" "));
+			Author.RemoveFromEnd("\n");
+			LastCommitAuthor = (Author);
 		}
 	}
 	ECommitSpread LastCommitSpread;
