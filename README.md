@@ -1,9 +1,10 @@
 # gitalong-unreal
 
-This a fork of the built-in GitSourceControl Unreal plugin that integrates [Gitalong]() mechanisms to prevent conflicts when working with a team.
+This a replacement for the built-in GitSourceControl Unreal plugin that integrate [Gitalong](https://github.com/douglaslassance/gitalong) mechanisms to prevent conflicts when working with a team.
 
 ## Pre-requisites
 
+- [Unreal Engine >=4.26](https://www.unrealengine.com/en-US/download)
 - [Git >=2.35.1](https://git-scm.com/downloads)
 - [Gitalong](https://github.com/douglaslassance/gitalong-cli/)
 

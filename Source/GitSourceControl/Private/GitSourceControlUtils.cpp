@@ -345,53 +345,44 @@ FString FindGitBinaryPath()
 FString FindGitalongBinaryPath()
 {
 #if PLATFORM_WINDOWS
-	// Look into standard install directories
-	FString BinaryPath(TEXT("C:/Program Files/Gitalong/gitalong.exe"));
-	bool bFound = CheckGitalongAvailability(BinaryPath);
-	if(!bFound)
+
+	TArray<FString> PythonVersions;
+	PythonVersions.Add("3.10");
+	PythonVersions.Add("3.9");
+	PythonVersions.Add("3.8");
+	PythonVersions.Add("3.7");
+
+	FString BinaryPath;
+	bool bFound = false;
+	
+	for(FString Version: PythonVersions)
 	{
-		// otherwise check the 32-bit program files directory.
-		BinaryPath = TEXT("C:/Program Files (x86)/Gitalong/gitalong.exe");
+		// First of all, look into Python global install directory
+		BinaryPath = FString::Printf(TEXT("C:/Program Files/Python/Python %s/Scripts/gitalong-gui.exe"), *Version);
 		bFound = CheckGitalongAvailability(BinaryPath);
-	}
-	if(!bFound)
-	{
-		// else the install dir for the current user: C:\Users\UserName\AppData\Local\Programs\Git\cmd
+		if (bFound)
+		{
+			break;
+		}
+		// Else, look into Python Python user install directory
 		const FString AppDataLocalPath = FPlatformMisc::GetEnvironmentVariable(TEXT("LOCALAPPDATA"));
-		BinaryPath = FString::Printf(TEXT("%s/Programs/Gitalong/gitalong.exe"), *AppDataLocalPath);
+		BinaryPath = FString::Printf(TEXT("%s/Programs/Python/Python%s/Scripts/gitalong-gui.exe"), *AppDataLocalPath, *Version.Replace(TEXT("."), TEXT("")));
 		bFound = CheckGitalongAvailability(BinaryPath);
-	}
-	if(!bFound)
-	{
-		// else the Scoop install dir for the current user:
-		const FString UserProfilePath = FPlatformMisc::GetEnvironmentVariable(TEXT("USERPROFILE"));
-		BinaryPath = FString::Printf(TEXT("%s/scoop/gitalong.exe"), *UserProfilePath);
-		bFound = CheckGitalongAvailability(BinaryPath);
+		if (bFound)
+		{
+			break;
+		}	
 	}
 	
 #elif PLATFORM_MAC
-	// 1) First of all, look for the version of git provided by official git
-	FString BinaryPath = TEXT("/usr/local/bin/gitalong");
+	// First of all, look for the version of gitalong provided by Homebrew
+	FString BinaryPath = TEXT("/opt/homebrew/bin/gitalong");
 	bool bFound = CheckGitalongAvailability(BinaryPath);
 
-	// 2) Else, look for the version of git provided by Homebrew
+	// Else, look for the version of gitalong provided by MacPorts
 	if (!bFound)
 	{
-		BinaryPath = TEXT("/opt/homebrew/bin/gitalong");
-		bFound = CheckGitalongAvailability(BinaryPath);
-	}
-
-	// 3) Else, look for the version of git provided by MacPorts
-	if (!bFound)
-	{
-		BinaryPath = TEXT("/opt/local/bin/gitalong");
-		bFound = CheckGitalongAvailability(BinaryPath);
-	}
-
-	// 4) Else, look for the version of git provided by Command Line Tools
-	if (!bFound)
-	{
-		BinaryPath = TEXT("/usr/bin/gitalong");
+		BinaryPath = TEXT("/opt/local/Library/Frameworks/Python.framework/Versions/Current/bin/gitalong");
 		bFound = CheckGitalongAvailability(BinaryPath);
 	}
 	
@@ -448,7 +439,7 @@ bool CheckGitalongAvailability(const FString& InPathToBinary, FGitVersion *OutVe
 	bool bGitalongAvailable = RunCommandInternalRaw(TEXT("version"), InPathToBinary, FString(), TArray<FString>(), TArray<FString>(), InfoMessages, ErrorMessages);
 	if(bGitalongAvailable)
 	{
-		if(!InfoMessages.Contains("gitalong"))
+		if(!InfoMessages.StartsWith("gitalong"))
 		{
 			bGitalongAvailable = false;
 		}
