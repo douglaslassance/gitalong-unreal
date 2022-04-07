@@ -1,25 +1,26 @@
 {
-	"FileVersion" : 3,
-	"Version" : 14,
-	"VersionName" : "1.0",
-	"FriendlyName" : "Gitalong",
-	"Description" : "Git without conflicts.",
-	"Category" : "Source Control",
-	"CreatedBy" : "Douglas Lassance",
-	"CreatedByURL" : "http://douglaslassance.com",
-	"DocsURL" : "",
-	"MarketplaceURL" : "",
-	"SupportURL" : "",
-	"EnabledByDefault" : true,
-	"CanContainContent" : false,
-	"IsBetaVersion" : true,
-	"Installed" : false,
-	"Modules" :
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"EngineVersion": "5.0.0",
+	"FriendlyName": "Gitalong",
+	"Description": "Git without conflicts.",
+	"Category": "Source Control",
+	"CreatedBy": "Douglas Lassance",
+	"CreatedByURL": "http://douglaslassance.com",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"EnabledByDefault": true,
+	"CanContainContent": false,
+	"IsBetaVersion": true,
+	"Installed": false,
+	"Modules":
 	[
 		{
-			"Name" : "GitSourceControl",
-			"Type" : "Editor",
-			"LoadingPhase" : "Default"
+			"Name": "GitSourceControl",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
 		}
 	]
 }
