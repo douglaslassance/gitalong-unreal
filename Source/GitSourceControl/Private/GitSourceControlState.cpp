@@ -99,6 +99,7 @@ FSlateIcon FGitSourceControlState::GetIcon() const
 	}
 }
 
+
 FText FGitSourceControlState::GetDisplayName() const
 {
 	switch(WorkingCopyState)

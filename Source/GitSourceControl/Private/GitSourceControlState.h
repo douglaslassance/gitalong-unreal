@@ -100,7 +100,7 @@ public:
 
 	/** State of the working copy */
 	EWorkingCopyState::Type WorkingCopyState;
-	
+
 	/** The timestamp of the last update */
 	FDateTime TimeStamp;
 

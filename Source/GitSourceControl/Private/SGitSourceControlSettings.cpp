@@ -1,7 +1,6 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "SGitSourceControlSettings.h"
-#include "Fonts/SlateFontInfo.h"
 #include "Misc/App.h"
 #include "Misc/Paths.h"
 #include "Misc/FileHelper.h"
@@ -28,8 +27,6 @@
 
 void SGitSourceControlSettings::Construct(const FArguments& InArgs)
 {
-	const FSlateFontInfo Font = FEditorStyle::GetFontStyle(TEXT("SourceControl.LoginWindow.Font"));
-
 	bAutoCreateGitIgnore = true;
 	bAutoCreateReadme = true;
 	bAutoCreateGitAttributes = false;
@@ -44,7 +41,7 @@ void SGitSourceControlSettings::Construct(const FArguments& InArgs)
 	const FString FileFilterText = FString::Printf(TEXT("%s"), *FileFilterType.ToString());
 #endif
 
-	ReadmeContent = FText::FromString(FString(TEXT("# ")) + FApp::GetProjectName() + "\n\nDeveloped with Unreal Engine 4\n");
+	ReadmeContent = FText::FromString(FString(TEXT("# ")) + FApp::GetProjectName() + "\n\nDeveloped with Unreal Engine 5\n");
 
 	ChildSlot
 	[
