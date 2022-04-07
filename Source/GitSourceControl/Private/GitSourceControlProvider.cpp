@@ -227,6 +227,11 @@ ECommandResult::Type FGitSourceControlProvider::GetState( const TArray<FString>&
 	return ECommandResult::Succeeded;
 }
 
+ECommandResult::Type FGitSourceControlProvider::GetState(const TArray<FSourceControlChangelistRef>& InChangelists, TArray<FSourceControlChangelistStateRef>& OutState, EStateCacheUsage::Type InStateCacheUsage)
+{
+	return ECommandResult::Failed;
+}
+
 TArray<FSourceControlStateRef> FGitSourceControlProvider::GetCachedStateByPredicate(TFunctionRef<bool(const FSourceControlStateRef&)> Predicate) const
 {
 	TArray<FSourceControlStateRef> Result;
@@ -256,7 +261,7 @@ void FGitSourceControlProvider::UnregisterSourceControlStateChanged_Handle( FDel
 	OnSourceControlStateChanged.Remove( Handle );
 }
 
-ECommandResult::Type FGitSourceControlProvider::Execute( const TSharedRef<ISourceControlOperation, ESPMode::ThreadSafe>& InOperation, const TArray<FString>& InFiles, EConcurrency::Type InConcurrency, const FSourceControlOperationComplete& InOperationCompleteDelegate )
+ECommandResult::Type FGitSourceControlProvider::Execute( const FSourceControlOperationRef& InOperation, FSourceControlChangelistPtr InChangelist, const TArray<FString>& InFiles, EConcurrency::Type InConcurrency, const FSourceControlOperationComplete& InOperationCompleteDelegate )
 {
 	if(!IsEnabled() && !(InOperation->GetName() == "Connect")) // Only Connect operation allowed while not Enabled (Connected)
 	{
@@ -302,12 +307,12 @@ ECommandResult::Type FGitSourceControlProvider::Execute( const TSharedRef<ISourc
 	}
 }
 
-bool FGitSourceControlProvider::CanCancelOperation( const TSharedRef<ISourceControlOperation, ESPMode::ThreadSafe>& InOperation ) const
+bool FGitSourceControlProvider::CanCancelOperation( const FSourceControlOperationRef& InOperation ) const
 {
 	return false;
 }
 
-void FGitSourceControlProvider::CancelOperation( const TSharedRef<ISourceControlOperation, ESPMode::ThreadSafe>& InOperation )
+void FGitSourceControlProvider::CancelOperation( const FSourceControlOperationRef& InOperation )
 {
 }
 
@@ -401,6 +406,11 @@ TArray< TSharedRef<ISourceControlLabel> > FGitSourceControlProvider::GetLabels( 
 	TArray< TSharedRef<ISourceControlLabel> > Tags;
 
 	return Tags;
+}
+
+TArray<FSourceControlChangelistRef> FGitSourceControlProvider::GetChangelists( EStateCacheUsage::Type InStateCacheUsage )
+{
+	return TArray<FSourceControlChangelistRef>();
 }
 
 #if SOURCE_CONTROL_WITH_SLATE
