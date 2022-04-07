@@ -81,19 +81,19 @@ FSlateIcon FGitSourceControlState::GetIcon() const
 	default:
 		if (IsCheckedOut())
 		{
-			return FName("Perforce.CheckedOut");
+			return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Subversion.CheckedOut");
 		}
 		if (IsCheckedOutOther())
 		{
-			return FName("Perforce.CheckedOutByOtherUser");
+			return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Subversion.CheckedOutByOtherUser");
 		}
 		if (IsCheckedOutInOtherBranch())
 		{
-			return FName("Perforce.CheckedOutByOtherUserOtherBranch");
+			return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Subversion.CheckedOutByOtherUserOtherBranch");
 		}
 		if (!IsCurrent())
 		{
-			return FName("Perforce.NotAtHeadRevision");
+			return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Subversion.NotAtHeadRevision");
 		}
 		return FSlateIcon();
 	}
