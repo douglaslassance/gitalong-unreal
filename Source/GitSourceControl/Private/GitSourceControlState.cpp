@@ -62,38 +62,38 @@ FSlateIcon FGitSourceControlState::GetIcon() const
 	switch (WorkingCopyState)
 	{
 	case EWorkingCopyState::Modified:
-		return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Subversion.CheckedOut");
+		return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Perforce.CheckedOut");
 	case EWorkingCopyState::Added:
-		return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Subversion.OpenForAdd");
+		return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Perforce.OpenForAdd");
 	case EWorkingCopyState::Renamed:
 	case EWorkingCopyState::Copied:
-		return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Subversion.Branched");
+		return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Perforce.Branched");
 	case EWorkingCopyState::Deleted: // Deleted & Missing files does not show in Content Browser
 	case EWorkingCopyState::Missing:
-		return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Subversion.MarkedForDelete");
+		return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Perforce.MarkedForDelete");
 	case EWorkingCopyState::Conflicted:
-		return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Subversion.NotAtHeadRevision");
+		return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Perforce.NotAtHeadRevision");
 	case EWorkingCopyState::NotControlled:
-		return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Subversion.NotInDepot");
+		return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Perforce.NotInDepot");
 	case EWorkingCopyState::Unknown:
 	case EWorkingCopyState::Unchanged: // Unchanged is the same as "Pristine" (not checked out) for Perforce, ie no icon
 	case EWorkingCopyState::Ignored:
 	default:
 		if (IsCheckedOut())
 		{
-			return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Subversion.CheckedOut");
+			return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Perforce.CheckedOut");
 		}
 		if (IsCheckedOutOther())
 		{
-			return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Subversion.CheckedOutByOtherUser");
+			return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Perforce.CheckedOutByOtherUser");
 		}
 		if (IsCheckedOutInOtherBranch())
 		{
-			return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Subversion.CheckedOutByOtherUserOtherBranch");
+			return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Perforce.CheckedOutByOtherUserOtherBranch");
 		}
 		if (!IsCurrent())
 		{
-			return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Subversion.NotAtHeadRevision");
+			return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Perforce.NotAtHeadRevision");
 		}
 		return FSlateIcon();
 	}
