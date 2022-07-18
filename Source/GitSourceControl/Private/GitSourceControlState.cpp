@@ -2,6 +2,7 @@
 
 #include "GitSourceControlState.h"
 #include "GitSourceControlModule.h"
+#include "Styling/AppStyle.h"
 
 #define LOCTEXT_NAMESPACE "GitSourceControl.State"
 
@@ -56,90 +57,48 @@ TSharedPtr<class ISourceControlRevision, ESPMode::ThreadSafe> FGitSourceControlS
 	return nullptr;
 }
 
-// @todo add Slate icons for git specific states (NotAtHead vs Conflicted...)
-FName FGitSourceControlState::GetIconName() const
+FSlateIcon FGitSourceControlState::GetIcon() const
 {
-	switch(WorkingCopyState)
+	switch (WorkingCopyState)
 	{
 	case EWorkingCopyState::Modified:
-		return FName("Perforce.CheckedOut");
+		return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Perforce.CheckedOut");
 	case EWorkingCopyState::Added:
-		return FName("Perforce.OpenForAdd");
+		return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Perforce.OpenForAdd");
 	case EWorkingCopyState::Renamed:
 	case EWorkingCopyState::Copied:
-		return FName("Perforce.Branched");
+		return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Perforce.Branched");
 	case EWorkingCopyState::Deleted: // Deleted & Missing files does not show in Content Browser
 	case EWorkingCopyState::Missing:
-		return FName("Perforce.MarkedForDelete");
+		return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Perforce.MarkedForDelete");
 	case EWorkingCopyState::Conflicted:
-		return FName("Perforce.NotAtHeadRevision");
+		return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Perforce.NotAtHeadRevision");
 	case EWorkingCopyState::NotControlled:
-		return FName("Perforce.NotInDepot");
+		return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Perforce.NotInDepot");
 	case EWorkingCopyState::Unknown:
 	case EWorkingCopyState::Unchanged: // Unchanged is the same as "Pristine" (not checked out) for Perforce, ie no icon
 	case EWorkingCopyState::Ignored:
 	default:
 		if (IsCheckedOut())
 		{
-			return FName("Perforce.CheckedOut");
+			return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Perforce.CheckedOut");
 		}
 		if (IsCheckedOutOther())
 		{
-			return FName("Perforce.CheckedOutByOtherUser");
+			return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Perforce.CheckedOutByOtherUser");
 		}
 		if (IsCheckedOutInOtherBranch())
 		{
-			return FName("Perforce.CheckedOutByOtherUserOtherBranch");
+			return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Perforce.CheckedOutByOtherUserOtherBranch");
 		}
 		if (!IsCurrent())
 		{
-			return FName("Perforce.NotAtHeadRevision");
+			return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Perforce.NotAtHeadRevision");
 		}
-		return NAME_None;
+		return FSlateIcon();
 	}
 }
 
-FName FGitSourceControlState::GetSmallIconName() const
-{
-	switch(WorkingCopyState)
-	{
-	case EWorkingCopyState::Modified:
-		return FName("Perforce.CheckedOut_Small");
-	case EWorkingCopyState::Added:
-		return FName("Perforce.OpenForAdd_Small");
-	case EWorkingCopyState::Renamed:
-	case EWorkingCopyState::Copied:
-		return FName("Perforce.Branched_Small");
-	case EWorkingCopyState::Deleted: // Deleted & Missing files can appear in the Submit to Source Control window
-	case EWorkingCopyState::Missing:
-		return FName("Perforce.MarkedForDelete_Small");
-	case EWorkingCopyState::Conflicted:
-		return FName("Perforce.NotAtHeadRevision_Small");
-	case EWorkingCopyState::NotControlled:
-		return FName("Perforce.NotInDepot_Small");
-	case EWorkingCopyState::Unknown:
-	case EWorkingCopyState::Unchanged: // Unchanged is the same as "Pristine" (not checked out) for Perforce, ie no icon
-	case EWorkingCopyState::Ignored:
-	default:
-		if (IsCheckedOut())
-		{
-			return FName("Perforce.CheckedOut_Small");
-		}
-		if (IsCheckedOutOther())
-		{
-			return FName("Perforce.CheckedOutByOtherUser_Small");
-		}
-		if (IsCheckedOutInOtherBranch())
-		{
-			return FName("Perforce.CheckedOutByOtherUserOtherBranch_Small");
-		}
-		if (!IsCurrent())
-		{
-			return FName("Perforce.NotAtHeadRevision_Small");
-		}
-		return NAME_None;
-	}
-}
 
 FText FGitSourceControlState::GetDisplayName() const
 {
@@ -399,7 +358,7 @@ bool FGitSourceControlState::IsModified() const
 	// so for a clean "check-in" (commit) checked-out files unmodified should be removed from the changeset (the index)
 	// http://stackoverflow.com/questions/12357971/what-does-revert-unchanged-files-mean-in-perforce
 	//
-	// Thus, before check-in UE4 Editor call RevertUnchangedFiles() in PromptForCheckin() and CheckinFiles().
+	// Thus, before check-in UE Editor call RevertUnchangedFiles() in PromptForCheckin() and CheckinFiles().
 	//
 	// So here we must take care to enumerate all states that need to be committed,
 	// all other will be discarded :
