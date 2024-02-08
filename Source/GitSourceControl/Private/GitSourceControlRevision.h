@@ -2,11 +2,11 @@
 
 #pragma once
 
-#include "CoreMinimal.h"
 #include "ISourceControlRevision.h"
+#include "Misc/DateTime.h"
 
 /** Revision of a file, linked to a specific commit */
-class FGitSourceControlRevision : public ISourceControlRevision, public TSharedFromThis<FGitSourceControlRevision, ESPMode::ThreadSafe>
+class FGitSourceControlRevision : public ISourceControlRevision
 {
 public:
 	FGitSourceControlRevision()
@@ -15,7 +15,7 @@ public:
 	}
 
 	/** ISourceControlRevision interface */
-	virtual bool Get( FString& InOutFilename ) const override;
+	virtual bool Get(FString& InOutFilename, EConcurrency::Type InConcurrency = EConcurrency::Synchronous) const override;
 	virtual bool GetAnnotated( TArray<FAnnotationLine>& OutLines ) const override;
 	virtual bool GetAnnotated( FString& InOutFilename ) const override;
 	virtual const FString& GetFilename() const override;

@@ -2,18 +2,16 @@
 
 #include "GitSourceControlUtils.h"
 #include "GitSourceControlCommand.h"
+#include "GitSourceControlState.h"
 #include "HAL/PlatformProcess.h"
-#include "HAL/PlatformFilemanager.h"
-#include "HAL/FileManager.h"
+#include "HAL/PlatformFile.h"
+#include "HAL/PlatformFileManager.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
-#include "Modules/ModuleManager.h"
 #include "ISourceControlModule.h"
 #include "GitSourceControlModule.h"
-#include "GitSourceControlProvider.h"
 
 #if PLATFORM_LINUX
-#include <sys/ioctl.h>
 #endif
 
 
@@ -748,11 +746,23 @@ public:
 	/** Parse the unmerge status: extract the base SHA1 identifier of the file */
 	FGitConflictStatusParser(const TArray<FString>& InResults)
 	{
-		const FString& FirstResult = InResults[0]; // 1: The common ancestor of merged branches
-		CommonAncestorFileId = FirstResult.Mid(7, 40);
+		const FString& CommonAncestor = InResults[0]; // 1: The common ancestor of merged branches
+		CommonAncestorFileId = CommonAncestor.Mid(7, 40);
+		CommonAncestorFilename = CommonAncestor.Right(50);
+
+		if (ensure(InResults.IsValidIndex(2)))
+		{
+			const FString& RemoteBranch = InResults[2]; // 1: The common ancestor of merged branches
+			RemoteFileId = RemoteBranch.Mid(7, 40);
+			RemoteFilename = RemoteBranch.Right(50);
+		}
 	}
 
 	FString CommonAncestorFileId;	///< SHA1 Id of the file (warning: not the commit Id)
+	FString RemoteFileId;		///< SHA1 Id of the file (warning: not the commit Id)
+
+	FString CommonAncestorFilename;
+	FString RemoteFilename;
 };
 
 /** Execute a command to get the details of a conflict */
@@ -769,7 +779,10 @@ static void RunGetConflictStatus(const FString& InPathToGitBinary, const FString
 	{
 		// Parse the unmerge status: extract the base revision (or the other branch?)
 		FGitConflictStatusParser ConflictStatus(Results);
-		InOutFileState.PendingMergeBaseFileHash = ConflictStatus.CommonAncestorFileId;
+		InOutFileState.PendingResolveInfo.BaseFile = ConflictStatus.CommonAncestorFilename;
+		InOutFileState.PendingResolveInfo.BaseRevision = ConflictStatus.CommonAncestorFileId;
+		InOutFileState.PendingResolveInfo.RemoteFile = ConflictStatus.RemoteFilename;
+		InOutFileState.PendingResolveInfo.RemoteRevision = ConflictStatus.RemoteFileId;
 	}
 }
 
@@ -784,7 +797,7 @@ void AbsoluteFilenames(const FString& InRepositoryRoot, TArray<FString>& InFileN
 
 /** Run a 'git ls-files' command to get all files tracked by Git recursively in a directory.
  *
- * Called in case of a "directory status" (no file listed in the command) when using the "Submit to Source Control" menu.
+ * Called in case of a "directory status" (no file listed in the command) when using the "Submit to Revision Control" menu.
 */
 static bool ListFilesInDirectoryRecurse(const FString& InPathToGitBinary, const FString& InRepositoryRoot, const FString& InDirectory, TArray<FString>& OutFiles)
 {
@@ -875,7 +888,7 @@ static void ParseDirectoryStatusResult(const FString& InPathToGitBinary, const F
 /**
  * @brief Detects how to parse the result of a "status" command to get workspace file states
  *
- *  It is either a command for a whole directory (ie. "Content/", in case of "Submit to Source Control" menu),
+ *  It is either a command for a whole directory (ie. "Content/", in case of "Submit to Revision Control" menu),
  * or for one or more files all on a same directory (by design, since we group files by directory in RunUpdateStatus())
  *
  * @param[in]	InPathToGitBinary	The path to the Git binary
@@ -889,7 +902,7 @@ static void ParseStatusResults(const FString& InPathToGitBinary, const FString& 
 	if(1 == InFiles.Num() && FPaths::DirectoryExists(InFiles[0]))
 	{
 		// 1) Special case for "status" of a directory: requires to get the list of files by ourselves.
-		//   (this is triggered by the "Submit to Source Control" menu)
+		//   (this is triggered by the "Submit to Revision Control" menu)
 		TArray<FString> Files;
 		const FString& Directory = InFiles[0];
 		const bool bResult = ListFilesInDirectoryRecurse(InPathToGitBinary, InRepositoryRoot, Directory, Files);
@@ -1005,7 +1018,7 @@ bool RunDumpToFile(const FString& InPathToGitBinary, const FString& InRepository
 
 	verify(FPlatformProcess::CreatePipe(PipeRead, PipeWrite));
 
-	FProcHandle ProcessHandle = FPlatformProcess::CreateProc(*InPathToGitBinary, *FullCommand, bLaunchDetached, bLaunchHidden, bLaunchReallyHidden, nullptr, 0, *InRepositoryRoot, PipeWrite);
+	FProcHandle ProcessHandle = FPlatformProcess::CreateProc(*InPathToGitBinary, *FullCommand, bLaunchDetached, bLaunchHidden, bLaunchReallyHidden, nullptr, 0, *InRepositoryRoot, PipeWrite, nullptr, nullptr);
 	if(ProcessHandle.IsValid())
 	{
 		FPlatformProcess::Sleep(0.01);
@@ -1287,7 +1300,7 @@ bool UpdateCachedStates(const TArray<FGitSourceControlState>& InStates)
 		if(State->WorkingCopyState != InState.WorkingCopyState)
 		{
 			State->WorkingCopyState = InState.WorkingCopyState;
-			State->PendingMergeBaseFileHash = InState.PendingMergeBaseFileHash;
+			State->PendingResolveInfo = InState.PendingResolveInfo;
 		//	State->TimeStamp = InState.TimeStamp; // @todo Bug report: Workaround a bug with the Source Control Module not updating file state after a "Save"
 			NbStatesUpdated++;
 		}
