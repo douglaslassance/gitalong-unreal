@@ -1,5 +1,8 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
+#include <cstdio>
+#include <string>
+
 #include "GitSourceControlUtils.h"
 #include "GitSourceControlCommand.h"
 #include "HAL/PlatformProcess.h"
@@ -169,239 +172,40 @@ static bool RunCommandInternal(const FString& InCommand, const FString& InPathTo
 	return bResult;
 }
 
+FString FindBinaryPath(FString Binary)
+{
+	char buffer[128];
+#if PLATFORM_WINDOWS
+    FILE* Pipe = _popen(TCHAR_TO_UTF8(*FString::Printf(TEXT("where %s"), *Binary)), "r");
+#else
+    FILE* Pipe = popen(TCHAR_TO_UTF8(*FString::Printf(TEXT("which %s"), *Binary)), "r");
+#endif
+	if (!Pipe) {
+        return "";
+    }
+    if (fgets(buffer, sizeof(buffer), Pipe) != nullptr) {
+        FString BinaryPath(buffer);
+        BinaryPath = BinaryPath.LeftChop(1); // trim the newline at the end
+    	FPaths::MakePlatformFilename(BinaryPath);
+#if PLATFORM_WINDOWS
+        if (_pclose(Pipe) != -1) {
+#else
+        if (pclose(Pipe) != -1) {
+#endif
+		    return BinaryPath;
+        }
+    }
+    return "";
+}
+
 FString FindGitBinaryPath()
 {
-#if PLATFORM_WINDOWS
-	// 1) First of all, look into standard install directories
-	// NOTE using only "git" (or "git.exe") relying on the "PATH" envvar does not always work as expected, depending on the installation:
-	// If the PATH is set with "git/cmd" instead of "git/bin",
-	// "git.exe" launch "git/cmd/git.exe" that redirect to "git/bin/git.exe" and ExecProcess() is unable to catch its outputs streams.
-	// First check the 64-bit program files directory:
-	FString BinaryPath(TEXT("C:/Program Files/Git/bin/git.exe"));
-	bool bFound = CheckGitAvailability(BinaryPath);
-	if(!bFound)
-	{
-		// otherwise check the 32-bit program files directory.
-		BinaryPath = TEXT("C:/Program Files (x86)/Git/bin/git.exe");
-		bFound = CheckGitAvailability(BinaryPath);
-	}
-	if(!bFound)
-	{
-		// else the install dir for the current user: C:\Users\UserName\AppData\Local\Programs\Git\cmd
-		const FString AppDataLocalPath = FPlatformMisc::GetEnvironmentVariable(TEXT("LOCALAPPDATA"));
-		BinaryPath = FString::Printf(TEXT("%s/Programs/Git/cmd/git.exe"), *AppDataLocalPath);
-		bFound = CheckGitAvailability(BinaryPath);
-	}
-
-	// 2) Else, look for the version of Git bundled with SmartGit "Installer with JRE"
-	if(!bFound)
-	{
-		BinaryPath = TEXT("C:/Program Files (x86)/SmartGit/git/bin/git.exe");
-		bFound = CheckGitAvailability(BinaryPath);
-		if (!bFound)
-		{
-			// If git is not found in "git/bin/" subdirectory, try the "bin/" path that was in use before
-			BinaryPath = TEXT("C:/Program Files (x86)/SmartGit/bin/git.exe");
-			bFound = CheckGitAvailability(BinaryPath);
-		}
-	}
-
-	// 3) Else, look for the local_git provided by SourceTree
-	if(!bFound)
-	{
-		// C:\Users\UserName\AppData\Local\Atlassian\SourceTree\git_local\bin
-		const FString AppDataLocalPath = FPlatformMisc::GetEnvironmentVariable(TEXT("LOCALAPPDATA"));
-		BinaryPath = FString::Printf(TEXT("%s/Atlassian/SourceTree/git_local/bin/git.exe"), *AppDataLocalPath);
-		bFound = CheckGitAvailability(BinaryPath);
-	}
-
-	// 4) Else, look for the PortableGit provided by GitHub Desktop
-	if(!bFound)
-	{
-		// The latest GitHub Desktop adds its binaries into the local appdata directory:
-		// C:\Users\UserName\AppData\Local\GitHub\PortableGit_c2ba306e536fdf878271f7fe636a147ff37326ad\cmd
-		const FString AppDataLocalPath = FPlatformMisc::GetEnvironmentVariable(TEXT("LOCALAPPDATA"));
-		const FString SearchPath = FString::Printf(TEXT("%s/GitHub/PortableGit_*"), *AppDataLocalPath);
-		TArray<FString> PortableGitFolders;
-		IFileManager::Get().FindFiles(PortableGitFolders, *SearchPath, false, true);
-		if(PortableGitFolders.Num() > 0)
-		{
-			// FindFiles just returns directory names, so we need to prepend the root path to get the full path.
-			BinaryPath = FString::Printf(TEXT("%s/GitHub/%s/cmd/git.exe"), *AppDataLocalPath, *(PortableGitFolders.Last())); // keep only the last PortableGit found
-			bFound = CheckGitAvailability(BinaryPath);
-			if (!bFound)
-			{
-				// If Portable git is not found in "cmd/" subdirectory, try the "bin/" path that was in use before
-				BinaryPath = FString::Printf(TEXT("%s/GitHub/%s/bin/git.exe"), *AppDataLocalPath, *(PortableGitFolders.Last())); // keep only the last PortableGit found
-				bFound = CheckGitAvailability(BinaryPath);
-			}
-		}
-	}
-
-	// 5) Else, look for the version of Git bundled with Tower
-	if (!bFound)
-	{
-		BinaryPath = TEXT("C:/Program Files (x86)/fournova/Tower/vendor/Git/bin/git.exe");
-		bFound = CheckGitAvailability(BinaryPath);
-	}
-
-#elif PLATFORM_MAC
-	// 1) First of all, look for the version of git provided by official git
-	FString BinaryPath = TEXT("/usr/local/git/bin/git");
-	bool bFound = CheckGitAvailability(BinaryPath);
-
-	// 2) Else, look for the version of git provided by Homebrew
-	if (!bFound)
-	{
-		BinaryPath = TEXT("/opt/homebrew/bin/git");
-		bFound = CheckGitAvailability(BinaryPath);
-	}
-
-	// 3) Else, look for the version of git provided by MacPorts
-	if (!bFound)
-	{
-		BinaryPath = TEXT("/opt/local/bin/git");
-		bFound = CheckGitAvailability(BinaryPath);
-	}
-
-	// 4) Else, look for the version of git provided by Command Line Tools
-	if (!bFound)
-	{
-		BinaryPath = TEXT("/usr/bin/git");
-		bFound = CheckGitAvailability(BinaryPath);
-	}
-
-	{
-		SCOPED_AUTORELEASE_POOL;
-		NSWorkspace* SharedWorkspace = [NSWorkspace sharedWorkspace];
-
-		// 5) Else, look for the version of local_git provided by SmartGit
-		if (!bFound)
-		{
-			NSURL* AppURL = [SharedWorkspace URLForApplicationWithBundleIdentifier:@"com.syntevo.smartgit"];
-			if (AppURL != nullptr)
-			{
-				NSBundle* Bundle = [NSBundle bundleWithURL:AppURL];
-				BinaryPath = FString::Printf(TEXT("%s/git/bin/git"), *FString([Bundle resourcePath]));
-				bFound = CheckGitAvailability(BinaryPath);
-			}
-		}
-
-		// 6) Else, look for the version of local_git provided by SourceTree
-		if (!bFound)
-		{
-			NSURL* AppURL = [SharedWorkspace URLForApplicationWithBundleIdentifier:@"com.torusknot.SourceTreeNotMAS"];
-			if (AppURL != nullptr)
-			{
-				NSBundle* Bundle = [NSBundle bundleWithURL:AppURL];
-				BinaryPath = FString::Printf(TEXT("%s/git_local/bin/git"), *FString([Bundle resourcePath]));
-				bFound = CheckGitAvailability(BinaryPath);
-			}
-		}
-
-		// 7) Else, look for the version of local_git provided by GitHub Desktop
-		if (!bFound)
-		{
-			NSURL* AppURL = [SharedWorkspace URLForApplicationWithBundleIdentifier:@"com.github.GitHubClient"];
-			if (AppURL != nullptr)
-			{
-				NSBundle* Bundle = [NSBundle bundleWithURL:AppURL];
-				BinaryPath = FString::Printf(TEXT("%s/app/git/bin/git"), *FString([Bundle resourcePath]));
-				bFound = CheckGitAvailability(BinaryPath);
-			}
-		}
-
-		// 8) Else, look for the version of local_git provided by Tower2
-		if (!bFound)
-		{
-			NSURL* AppURL = [SharedWorkspace URLForApplicationWithBundleIdentifier:@"com.fournova.Tower2"];
-			if (AppURL != nullptr)
-			{
-				NSBundle* Bundle = [NSBundle bundleWithURL:AppURL];
-				BinaryPath = FString::Printf(TEXT("%s/git/bin/git"), *FString([Bundle resourcePath]));
-				bFound = CheckGitAvailability(BinaryPath);
-			}
-		}
-	}
-
-#else
-	FString BinaryPath = TEXT("/usr/bin/git");
-	bool bFound = CheckGitAvailability(BinaryPath);
-#endif
-
-	if(bFound)
-	{
-		FPaths::MakePlatformFilename(BinaryPath);
-	}
-	else
-	{
-		// If we did not find a path to Git, set it empty
-		BinaryPath.Empty();
-	}
-
-	return BinaryPath;
+	return FindBinaryPath("git");
 }
 
 FString FindGitalongBinaryPath()
 {
-#if PLATFORM_WINDOWS
-
-	TArray<FString> PythonVersions;
-	PythonVersions.Add("3.10");
-	PythonVersions.Add("3.9");
-	PythonVersions.Add("3.8");
-	PythonVersions.Add("3.7");
-
-	FString BinaryPath;
-	bool bFound = false;
-	
-	for(FString Version: PythonVersions)
-	{
-		// First of all, look into Python global install directory
-		BinaryPath = FString::Printf(TEXT("C:/Program Files/Python/Python %s/Scripts/gitalong-gui.exe"), *Version);
-		bFound = CheckGitalongAvailability(BinaryPath);
-		if (bFound)
-		{
-			break;
-		}
-		// Else, look into Python Python user install directory
-		const FString AppDataLocalPath = FPlatformMisc::GetEnvironmentVariable(TEXT("LOCALAPPDATA"));
-		BinaryPath = FString::Printf(TEXT("%s/Programs/Python/Python%s/Scripts/gitalong-gui.exe"), *AppDataLocalPath, *Version.Replace(TEXT("."), TEXT("")));
-		bFound = CheckGitalongAvailability(BinaryPath);
-		if (bFound)
-		{
-			break;
-		}	
-	}
-	
-#elif PLATFORM_MAC
-	// First of all, look for the version of gitalong provided by Homebrew
-	FString BinaryPath = TEXT("/opt/homebrew/bin/gitalong");
-	bool bFound = CheckGitalongAvailability(BinaryPath);
-
-	// Else, look for the version of gitalong provided by MacPorts
-	if (!bFound)
-	{
-		BinaryPath = TEXT("/opt/local/Library/Frameworks/Python.framework/Versions/Current/bin/gitalong");
-		bFound = CheckGitalongAvailability(BinaryPath);
-	}
-	
-#else
-	FString BinaryPath = TEXT("/usr/bin/gitalong");
-	bool bFound = CheckGitalongAvailability(BinaryPath);
-#endif
-
-	if(bFound)
-	{
-		FPaths::MakePlatformFilename(BinaryPath);
-	}
-	else
-	{
-		// If we did not find a path to Git, set it empty
-		BinaryPath.Empty();
-	}
-
-	return BinaryPath;
+	return FindBinaryPath("gitalong-gui");
 }
 
 bool CheckGitAvailability(const FString& InPathToBinary, FGitVersion *OutVersion)
