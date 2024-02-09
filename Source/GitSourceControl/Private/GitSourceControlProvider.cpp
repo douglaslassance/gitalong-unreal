@@ -1,6 +1,11 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "GitSourceControlProvider.h"
+
+#include <cstdlib>
+#include <iostream>
+#include <memory>
+
 #include "HAL/PlatformProcess.h"
 #include "Misc/Paths.h"
 #include "Misc/QueuedThreadPool.h"
@@ -37,7 +42,7 @@ void FGitSourceControlProvider::Init(bool bForceConnection)
 
 	if(bGitalongAvailable)
 	{
-		// Bind Gitalong sync to save event
+		// Bind Gitalong update to save event
 		if (!UPackage::PackageSavedEvent.IsBoundToObject(this))
 		{
 			UE_LOG(LogSourceControl, Log, TEXT("Binding FGitSourceControlProvider::HandleOnPackageSaveEvent to PackageSavedEvent"));
@@ -135,7 +140,7 @@ void FGitSourceControlProvider::Close()
 	UserName.Empty();
 	UserEmail.Empty();
 
-	// Unbind Gitalong sync from save event
+	// Unbind Gitalong update from save event
 	UE_LOG(LogSourceControl, Log, TEXT("Unbinding FGitSourceControlProvider::HandleOnPackageSaveEvent to PackageSavedEvent"));
 	UPackage::PackageSavedEvent.Remove(OnPackageSaveEventHandle);
 }
@@ -155,8 +160,9 @@ void FGitSourceControlProvider::HandleOnPackageSaveEvent(const FString& PackageF
 	}
 
 	// @todo Check if Gitalong preferences are set to not track uncommitted files in which case this not necessary.
-	// @todo This is not ideal as the Gitalong sync is expensive and we are running of each file saved.
-	GitSourceControlUtils::RunCommand(TEXT("sync"), GitSourceControlUtils::FindGitalongBinaryPath(), FullPath, TArray<FString>(), InFiles, InResults, InErrorMessages);
+	// @todo This is not ideal as the Gitalong update is expensive and we are running of each file saved.
+	GitSourceControlUtils::RunCommand(TEXT("update"), GitSourceControlUtils::FindGitalongBinaryPath(), FullPath, TArray<FString>(), InFiles, InResults, InErrorMessages);
+	UE_LOG(LogSourceControl, Log, TEXT("Package Saved Event"));
 }
 
 TSharedRef<FGitSourceControlState, ESPMode::ThreadSafe> FGitSourceControlProvider::GetStateInternal(const FString& Filename)
@@ -318,8 +324,21 @@ void FGitSourceControlProvider::CancelOperation( const FSourceControlOperationRe
 
 bool FGitSourceControlProvider::UsesLocalReadOnlyState() const
 {
-	// @todo Check Gitalong config to see if modify_permissions is true.
-	return true;
+    std::string Output = "";
+#if PLATFORM_WINDOWS
+    const std::shared_ptr<FILE> Pipe(_popen("gitalong config modify-permissions", "r"), _pclose);
+#else
+    const std::shared_ptr<FILE> Pipe(popen("gitalong config modify-permissions", "r"), pclose);
+#endif
+    if (Pipe)
+    {
+	    while (!feof(Pipe.get())) {
+	        if (char Buffer[128]; fgets(Buffer, 128, Pipe.get()) != nullptr)
+	            Output += Buffer;
+	    }
+		return Output.find("true") != std::string::npos;
+    }
+	return false;
 }
 
 bool FGitSourceControlProvider::UsesChangelists() const

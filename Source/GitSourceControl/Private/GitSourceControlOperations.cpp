@@ -69,7 +69,7 @@ bool FGitCheckOutWorker::Execute(FGitSourceControlCommand& InCommand)
 	{
 		if(FPlatformFileManager::Get().GetPlatformFile().SetReadOnly(*File, false))
 		{
-			// @todo We should just save the asset here as currently checking on triggering save works, but checkout only puts the system in a bad state.
+			// @todo We should just save the asset here as with Gitalong only modified files are considered checked out.
 			Provider.PendingSaves.Add(File);
 		} else
 		{
@@ -185,7 +185,7 @@ bool FGitDeleteWorker::Execute(FGitSourceControlCommand& InCommand)
 	// @todo Check if Gitalong preferences are set to not track uncommitted files in which case this not necessary.
 	if (InCommand.bCommandSuccessful)
 	{
-		InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("sync"), InCommand.PathToGitalongBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), InCommand.Files, InCommand.InfoMessages, InCommand.ErrorMessages);
+		InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("update"), InCommand.PathToGitalongBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), InCommand.Files, InCommand.InfoMessages, InCommand.ErrorMessages);
 	}
 	
 	// now update the status of our files
@@ -259,10 +259,10 @@ bool FGitRevertWorker::Execute(FGitSourceControlCommand& InCommand)
 	}
 
 	// @todo Check if Gitalong preferences are set to not track uncommitted files in which case this not necessary.
-	// Only doing the sync on rm and reset because gitalong sync will run on checkout with the post-checkout hook.
+	// Only doing the update on rm and reset because gitalong update will run on checkout with the post-checkout hook.
 	if (InCommand.bCommandSuccessful && (MissingFiles.Num() > 0 || AllExistingFiles.Num() > 0))
 	{
-		InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("sync"), InCommand.PathToGitalongBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), TArray<FString>(), InCommand.InfoMessages, InCommand.ErrorMessages);
+		InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("update"), InCommand.PathToGitalongBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), TArray<FString>(), InCommand.InfoMessages, InCommand.ErrorMessages);
 	}
 
 	// now update the status of our files
@@ -389,7 +389,7 @@ bool FGitCopyWorker::Execute(FGitSourceControlCommand& InCommand)
 	// @todo Check if Gitalong preferences are set to not track uncommitted files in which case this not necessary.
 	if (InCommand.bCommandSuccessful)
 	{
-		InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("sync"), InCommand.PathToGitalongBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), TArray<FString>(), InCommand.InfoMessages, InCommand.ErrorMessages);
+		InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("update"), InCommand.PathToGitalongBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), TArray<FString>(), InCommand.InfoMessages, InCommand.ErrorMessages);
 	}
 
 	return InCommand.bCommandSuccessful;

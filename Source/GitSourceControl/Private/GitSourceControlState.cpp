@@ -139,7 +139,15 @@ FText FGitSourceControlState::GetDisplayName() const
 			{
 				return FText::Format(LOCTEXT("CheckedOutOther", "Missing local changes by {0}"), FText::FromString(LastCommitAuthor));
 			}
-			return FText::Format(LOCTEXT("CheckedOutOther", "Missing commit {0} by {1}"), FText::FromString(LastCommitSha.Left(5)), FText::FromString(LastCommitAuthor));
+			FString Branch;
+			if (LastCommitRemoteBranches.Num())
+			{
+				Branch = LastCommitRemoteBranches[0];
+			} else if (LastCommitLocalBranches.Num())
+			{
+				Branch = LastCommitLocalBranches[0];
+			}
+			return FText::Format(LOCTEXT("CheckedOutInOtherBranch", "Missing commit {0} by {1} in {2} branch"), FText::FromString(LastCommitSha.Left(5)), FText::FromString(LastCommitAuthor), FText::FromString(Branch));
 		}
 		if (IsCheckedOutInOtherBranch())
 		{	
@@ -200,7 +208,15 @@ FText FGitSourceControlState::GetDisplayTooltip() const
 			{
 				return FText::Format(LOCTEXT("CheckedOutOther_Tooltip", "Missing local changes by {0}"), FText::FromString(LastCommitAuthor));
 			}
-			return FText::Format(LOCTEXT("CheckedOutOther_Tooltip", "Missing commit {0} by {1}"), FText::FromString(LastCommitSha.Left(5)), FText::FromString(LastCommitAuthor));
+			FString Branch;
+			if (LastCommitRemoteBranches.Num())
+			{
+				Branch = LastCommitRemoteBranches[0];
+			} else if (LastCommitLocalBranches.Num())
+			{
+				Branch = LastCommitLocalBranches[0];
+			}
+			return FText::Format(LOCTEXT("CheckedOutInOtherBranch_Tooltip", "Missing commit {0} by {1} in {2} branch"), FText::FromString(LastCommitSha.Left(5)), FText::FromString(LastCommitAuthor), FText::FromString(Branch));
 		}
 		if (IsCheckedOutInOtherBranch())
 		{
@@ -268,7 +284,6 @@ bool FGitSourceControlState::IsCheckedOut() const
 	FGitSourceControlModule& GitSourceControl = FModuleManager::GetModuleChecked<FGitSourceControlModule>("GitSourceControl");
 	const FGitSourceControlProvider& Provider = GitSourceControl.GetProvider();
 	return Provider.PendingSaves.Contains(LocalFilename);
-	return false;
 }
 
 bool FGitSourceControlState::IsCheckedOutOther(FString* Who) const
@@ -282,19 +297,21 @@ bool FGitSourceControlState::IsCheckedOutOther(FString* Who) const
 	}
 	const bool CloneMatchingBranch = (LastCommitSpread & ECommitSpread::CloneMatchingBranch) == ECommitSpread::CloneMatchingBranch;
 	const bool RemoteMatchingBranch = (LastCommitSpread & ECommitSpread::RemoteMatchingBranch) == ECommitSpread::RemoteMatchingBranch;
-	return CloneMatchingBranch && !RemoteMatchingBranch;
-}
 
-bool FGitSourceControlState::IsCheckedOutInOtherBranch(const FString& CurrentBranch) const
-{
-	if (LastCommitSpread == ECommitSpread::Unknown) {
-		return false;
-	}
 	const bool RemoteOtherBranch = (LastCommitSpread & ECommitSpread::RemoteOtherBranch) == ECommitSpread::RemoteOtherBranch;
 	const bool LocalActiveBranch = (LastCommitSpread & ECommitSpread::LocalActiveBranch) == ECommitSpread::LocalActiveBranch;
 	const bool LocalOtherBranch = (LastCommitSpread & ECommitSpread::LocalOtherBranch) == ECommitSpread::LocalOtherBranch;
 	const bool CloneOtherBranch = (LastCommitSpread & ECommitSpread::CloneOtherBranch) == ECommitSpread::CloneOtherBranch;
-	return (RemoteOtherBranch || LocalOtherBranch || CloneOtherBranch)  && !LocalActiveBranch;
+
+	return (CloneMatchingBranch && !RemoteMatchingBranch) || ((RemoteOtherBranch || LocalOtherBranch || CloneOtherBranch)  && !LocalActiveBranch);
+}
+
+// Unreal let's these file be saved because in the Perforce workflow checkouts are not exclusive across branches.
+// With Gitalong, we take a different approach where only release branch let's you modify files changed somewhere else.
+bool FGitSourceControlState::IsCheckedOutInOtherBranch(const FString& CurrentBranch) const
+{
+	// @todo Handle release branches here.
+	return false;
 }
 
 bool FGitSourceControlState::IsCurrent() const

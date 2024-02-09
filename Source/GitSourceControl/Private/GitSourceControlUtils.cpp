@@ -1,9 +1,11 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
+#include "GitSourceControlUtils.h"
+
 #include <cstdio>
 #include <string>
 
-#include "GitSourceControlUtils.h"
+#include "GitSourceControlProvider.h"
 #include "GitSourceControlCommand.h"
 #include "HAL/PlatformProcess.h"
 #include "HAL/PlatformFileManager.h"
@@ -13,7 +15,6 @@
 #include "Modules/ModuleManager.h"
 #include "ISourceControlModule.h"
 #include "GitSourceControlModule.h"
-#include "GitSourceControlProvider.h"
 
 #if PLATFORM_LINUX
 #include <sys/ioctl.h>
@@ -75,8 +76,8 @@ static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPat
 				RepositoryRoot = DestinationRepositoryRoot; // if found use it for the "add" command (else not, to avoid producing one more error in logs)
 			}
 		}
-		// @todo This is not safe as people could point to a Git executable not called "git" or "git.exe".
-		if (InPathToBinary.EndsWith("git") || InPathToBinary.EndsWith("git.exe"))
+		// @todo This is not safe as people could point to an executable with an unexpected name.
+		if (InPathToBinary.EndsWith("git") || InPathToBinary.EndsWith("git.exe") || InPathToBinary.EndsWith("gitalong-gui") || InPathToBinary.EndsWith("gitalong-gui.exe"))
 		{
 			// Specify the working copy (the root) of the git repository (before the command itself)
 			FullCommand  = TEXT("-C \"");
@@ -174,7 +175,6 @@ static bool RunCommandInternal(const FString& InCommand, const FString& InPathTo
 
 FString FindBinaryPath(FString Binary)
 {
-	char buffer[128];
 #if PLATFORM_WINDOWS
     FILE* Pipe = _popen(TCHAR_TO_UTF8(*FString::Printf(TEXT("where %s"), *Binary)), "r");
 #else
@@ -183,8 +183,8 @@ FString FindBinaryPath(FString Binary)
 	if (!Pipe) {
         return "";
     }
-    if (fgets(buffer, sizeof(buffer), Pipe) != nullptr) {
-        FString BinaryPath(buffer);
+    if (char Buffer[128]; fgets(Buffer, sizeof(Buffer), Pipe) != nullptr) {
+        FString BinaryPath(Buffer);
         BinaryPath = BinaryPath.LeftChop(1); // trim the newline at the end
     	FPaths::MakePlatformFilename(BinaryPath);
 #if PLATFORM_WINDOWS
@@ -1343,7 +1343,8 @@ bool UpdateCachedStates(const TArray<FGitSourceControlState>& InStates)
 		{
 			State->WorkingCopyState = InState.WorkingCopyState;
 			State->PendingMergeBaseFileHash = InState.PendingMergeBaseFileHash;
-		//	State->TimeStamp = InState.TimeStamp; // @todo Bug report: Workaround a bug with the Source Control Module not updating file state after a "Save"
+			// @todo Bug report: Workaround a bug with the Source Control Module not updating file state after a "Save".
+			// State->TimeStamp = InState.TimeStamp;
 			State->LastCommitSpread = InState.LastCommitSpread;
 			State->LastCommitSha =  InState.LastCommitSha;
 			State->LastCommitRemoteBranches = InState.LastCommitRemoteBranches;

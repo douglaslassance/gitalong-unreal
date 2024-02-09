@@ -212,6 +212,6 @@ private:
 
 	void HandleOnPackageSaveEvent(const FString& PackageFilename, UObject* Outer);
 	
-	/** The handle for running a Gitalong sync after assets are saved. */
+	/** The handle for running a Gitalong update after assets are saved. */
 	FDelegateHandle OnPackageSaveEventHandle;
 };
