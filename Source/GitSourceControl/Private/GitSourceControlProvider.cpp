@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "GitSourceControlProvider.h"
+#include "GitSourceControlState.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -20,6 +21,7 @@
 #include "SourceControlOperations.h"
 #include "Logging/MessageLog.h"
 #include "ScopedSourceControlProgress.h"
+#include "UObject/ObjectSaveContext.h"
 
 #define LOCTEXT_NAMESPACE "GitSourceControl"
 
@@ -43,10 +45,10 @@ void FGitSourceControlProvider::Init(bool bForceConnection)
 	if(bGitalongAvailable)
 	{
 		// Bind Gitalong update to save event
-		if (!UPackage::PackageSavedEvent.IsBoundToObject(this))
+		if (!UPackage::PackageSavedWithContextEvent.IsBoundToObject(this))
 		{
 			UE_LOG(LogSourceControl, Log, TEXT("Binding FGitSourceControlProvider::HandleOnPackageSaveEvent to PackageSavedEvent"));
-			OnPackageSaveEventHandle = UPackage::PackageSavedEvent.AddRaw(this, &FGitSourceControlProvider::HandleOnPackageSaveEvent);
+			OnPackageSavedWithContextEventHandle = UPackage::PackageSavedWithContextEvent.AddRaw(this, &FGitSourceControlProvider::OnPackageSavedWithContext);
 		}
 	}
 }
@@ -142,16 +144,17 @@ void FGitSourceControlProvider::Close()
 
 	// Unbind Gitalong update from save event
 	UE_LOG(LogSourceControl, Log, TEXT("Unbinding FGitSourceControlProvider::HandleOnPackageSaveEvent to PackageSavedEvent"));
-	UPackage::PackageSavedEvent.Remove(OnPackageSaveEventHandle);
+	UPackage::PackageSavedWithContextEvent.Remove(OnPackageSavedWithContextEventHandle);
 }
 
-void FGitSourceControlProvider::HandleOnPackageSaveEvent(const FString& PackageFilename, UObject* Outer)
+void FGitSourceControlProvider::OnPackageSavedWithContext(const FString& PackageFileName, UPackage* Package,
+	FObjectPostSaveContext ObjectSaveContext)
 {
 	TArray<FString> InResults;
 	TArray<FString> InErrorMessages;
 	TArray<FString> InFiles;
 	
-	const FString FullPath = FPaths::ConvertRelativePathToFull(PackageFilename);
+	const FString FullPath = FPaths::ConvertRelativePathToFull(PackageFileName);
 	InFiles.Add(FullPath);
 
 	if (PendingSaves.Contains(FullPath))
@@ -192,6 +195,19 @@ FText FGitSourceControlProvider::GetStatusText() const
 	Args.Add( TEXT("UserEmail"), FText::FromString(UserEmail) );
 
 	return FText::Format( NSLOCTEXT("Status", "Provider: Git\nEnabledLabel", "Local repository: {RepositoryName}\nRemote origin: {RemoteUrl}\nBranch: {BranchName}\nUser: {UserName}\nE-mail: {UserEmail}"), Args );
+}
+
+TMap<ISourceControlProvider::EStatus, FString> FGitSourceControlProvider::GetStatus() const
+{
+	TMap<EStatus, FString> Result;
+	Result.Add(EStatus::Enabled, IsEnabled() ? TEXT("Yes") : TEXT("No") );
+	Result.Add(EStatus::Connected, (IsEnabled() && IsAvailable()) ? TEXT("Yes") : TEXT("No") );
+	Result.Add(EStatus::User, UserName);
+	Result.Add(EStatus::Repository, PathToRepositoryRoot);
+	Result.Add(EStatus::Remote, RemoteUrl);
+	Result.Add(EStatus::Branch, BranchName);
+	Result.Add(EStatus::Email, UserEmail);
+	return Result;
 }
 
 /** Quick check if source control is enabled */
@@ -286,7 +302,7 @@ ECommandResult::Type FGitSourceControlProvider::Execute( const FSourceControlOpe
 		FFormatNamedArguments Arguments;
 		Arguments.Add( TEXT("OperationName"), FText::FromName(InOperation->GetName()) );
 		Arguments.Add( TEXT("ProviderName"), FText::FromName(GetName()) );
-		const FText Message(FText::Format(LOCTEXT("UnsupportedOperation", "Operation '{OperationName}' not supported by source control provider '{ProviderName}'"), Arguments));
+		const FText Message(FText::Format(LOCTEXT("UnsupportedOperation", "Operation '{OperationName}' not supported by revision control provider '{ProviderName}'"), Arguments));
 		FMessageLog("SourceControl").Error(Message);
 		InOperation->AddErrorMessge(Message);
 
@@ -311,6 +327,11 @@ ECommandResult::Type FGitSourceControlProvider::Execute( const FSourceControlOpe
 		UE_LOG(LogSourceControl, Log, TEXT("IssueAsynchronousCommand(%s)"), *InOperation->GetName().ToString());
 		return IssueCommand(*Command);
 	}
+}
+
+bool FGitSourceControlProvider::CanExecuteOperation( const FSourceControlOperationRef& InOperation ) const
+{
+	return WorkersMap.Find(InOperation->GetName()) != nullptr;
 }
 
 bool FGitSourceControlProvider::CanCancelOperation( const FSourceControlOperationRef& InOperation ) const
@@ -346,6 +367,11 @@ bool FGitSourceControlProvider::UsesChangelists() const
 	return false;
 }
 
+bool FGitSourceControlProvider::UsesUncontrolledChangelists() const
+{
+	return true;
+}
+
 bool FGitSourceControlProvider::UsesCheckout() const
 {
 	return true;
@@ -354,6 +380,16 @@ bool FGitSourceControlProvider::UsesCheckout() const
 bool FGitSourceControlProvider::UsesFileRevisions() const
 {
 	return false;
+}
+
+bool FGitSourceControlProvider::UsesSnapshots() const
+{
+	return false;
+}
+
+bool FGitSourceControlProvider::AllowsDiffAgainstDepot() const
+{
+	return true;
 }
 
 TOptional<bool> FGitSourceControlProvider::IsAtLatestRevision() const
@@ -510,7 +546,7 @@ ECommandResult::Type FGitSourceControlProvider::IssueCommand(FGitSourceControlCo
 	}
 	else
 	{
-		const FText Message(LOCTEXT("NoSCCThreads", "There are no threads available to process the source control command."));
+		const FText Message(LOCTEXT("NoSCCThreads", "There are no threads available to process the revision control command."));
 
 		FMessageLog("SourceControl").Error(Message);
 		InCommand.bCommandSuccessful = false;

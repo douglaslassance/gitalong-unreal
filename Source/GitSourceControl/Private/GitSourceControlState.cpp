@@ -1,10 +1,18 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "GitSourceControlState.h"
-#include "GitSourceControlModule.h"
-#include "Styling/AppStyle.h"
+#include "RevisionControlStyle/RevisionControlStyle.h"
+#include "Textures/SlateIcon.h"
 
 #define LOCTEXT_NAMESPACE "GitSourceControl.State"
+
+class FString;
+PRAGMA_DISABLE_DEPRECATION_WARNINGS
+FGitSourceControlState::FGitSourceControlState(const FGitSourceControlState& Other) = default;
+FGitSourceControlState::FGitSourceControlState(FGitSourceControlState&& Other) noexcept = default;
+FGitSourceControlState& FGitSourceControlState::operator=(const FGitSourceControlState& Other) = default;
+FGitSourceControlState& FGitSourceControlState::operator=(FGitSourceControlState&& Other) noexcept = default;
+PRAGMA_ENABLE_DEPRECATION_WARNINGS
 
 int32 FGitSourceControlState::GetHistorySize() const
 {
@@ -32,9 +40,18 @@ TSharedPtr<class ISourceControlRevision, ESPMode::ThreadSafe> FGitSourceControlS
 
 TSharedPtr<class ISourceControlRevision, ESPMode::ThreadSafe> FGitSourceControlState::FindHistoryRevision(const FString& InRevision) const
 {
+	// short hash must be >= 7 characters to have a reasonable probability of finding the correct revision
+	if (!ensure(InRevision.Len() >= 7))
+	{
+		return nullptr;
+	}
+	
 	for(const auto& Revision : History)
 	{
-		if(Revision->GetRevision() == InRevision)
+		// support for short hashes
+		const int32 Len = FMath::Min(Revision->CommitId.Len(), InRevision.Len());
+		
+		if(Revision->CommitId.Left(Len) == InRevision.Left(Len))
 		{
 			return Revision;
 		}
@@ -43,38 +60,36 @@ TSharedPtr<class ISourceControlRevision, ESPMode::ThreadSafe> FGitSourceControlS
 	return nullptr;
 }
 
-TSharedPtr<class ISourceControlRevision, ESPMode::ThreadSafe> FGitSourceControlState::GetBaseRevForMerge() const
+TSharedPtr<class ISourceControlRevision, ESPMode::ThreadSafe> FGitSourceControlState::GetCurrentRevision() const
 {
-	for(const auto& Revision : History)
-	{
-		// look for the the SHA1 id of the file, not the commit id (revision)
-		if(Revision->FileHash == PendingMergeBaseFileHash)
-		{
-			return Revision;
-		}
-	}
-
 	return nullptr;
 }
+
+ISourceControlState::FResolveInfo FGitSourceControlState::GetResolveInfo() const
+{
+	return PendingResolveInfo;
+}
+
+#if SOURCE_CONTROL_WITH_SLATE
 
 FSlateIcon FGitSourceControlState::GetIcon() const
 {
 	switch (WorkingCopyState)
 	{
 	case EWorkingCopyState::Modified:
-		return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Perforce.CheckedOut");
+		return FSlateIcon(FRevisionControlStyleManager::GetStyleSetName(), "RevisionControl.CheckedOut");
 	case EWorkingCopyState::Added:
-		return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Perforce.OpenForAdd");
+		return FSlateIcon(FRevisionControlStyleManager::GetStyleSetName(), "RevisionControl.OpenForAdd");
 	case EWorkingCopyState::Renamed:
 	case EWorkingCopyState::Copied:
-		return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Perforce.Branched");
+		return FSlateIcon(FRevisionControlStyleManager::GetStyleSetName(), "RevisionControl.Branched");
 	case EWorkingCopyState::Deleted: // Deleted & Missing files does not show in Content Browser
 	case EWorkingCopyState::Missing:
-		return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Perforce.MarkedForDelete");
+		return FSlateIcon(FRevisionControlStyleManager::GetStyleSetName(), "RevisionControl.MarkedForDelete");
 	case EWorkingCopyState::Conflicted:
-		return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Perforce.NotAtHeadRevision");
+		return FSlateIcon(FRevisionControlStyleManager::GetStyleSetName(), "RevisionControl.Conflicted");
 	case EWorkingCopyState::NotControlled:
-		return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Perforce.NotInDepot");
+		return FSlateIcon(FRevisionControlStyleManager::GetStyleSetName(), "RevisionControl.NotInDepot");
 	case EWorkingCopyState::Unknown:
 	case EWorkingCopyState::Unchanged: // Unchanged is the same as "Pristine" (not checked out) for Perforce, ie no icon
 	case EWorkingCopyState::Ignored:
@@ -99,11 +114,15 @@ FSlateIcon FGitSourceControlState::GetIcon() const
 	}
 }
 
+#endif //SOURCE_CONTROL_WITH_SLATE
+
 
 FText FGitSourceControlState::GetDisplayName() const
 {
 	switch(WorkingCopyState)
 	{
+	case EWorkingCopyState::Unknown:
+		return LOCTEXT("Unknown", "Unknown");
 	case EWorkingCopyState::Added:
 		return LOCTEXT("Added", "Added");
 	case EWorkingCopyState::Deleted:
@@ -115,14 +134,13 @@ FText FGitSourceControlState::GetDisplayName() const
 	case EWorkingCopyState::Copied:
 		return LOCTEXT("Copied", "Copied");
 	case EWorkingCopyState::Conflicted:
-		return LOCTEXT("ContentsConflict", "Contents conflict");
+		return LOCTEXT("ContentsConflict", "Contents Conflict");
 	case EWorkingCopyState::Ignored:
 		return LOCTEXT("Ignored", "Ignored");
 	case EWorkingCopyState::NotControlled:
-		return LOCTEXT("NotControlled", "Not under source control");
+		return LOCTEXT("NotControlled", "Not Under Revision Control");
 	case EWorkingCopyState::Missing:
 		return LOCTEXT("Missing", "Missing");
-	case EWorkingCopyState::Unknown:
 	case EWorkingCopyState::Unchanged: // Unchanged is the same as "Pristine" (not checked out) for Perforce, ie no icon
 	default:
 		if (IsCheckedOut())
@@ -306,8 +324,8 @@ bool FGitSourceControlState::IsCheckedOutOther(FString* Who) const
 	return (CloneMatchingBranch && !RemoteMatchingBranch) || ((RemoteOtherBranch || LocalOtherBranch || CloneOtherBranch)  && !LocalActiveBranch);
 }
 
-// Unreal let's these file be saved because in the Perforce workflow checkouts are not exclusive across branches.
-// With Gitalong, we take a different approach where only release branch let's you modify files changed somewhere else.
+// Unreal let us these file be saved because in the Perforce workflow checkouts are not exclusive across branches.
+// With Gitalong, we take a different approach where only release branch let us you modify files changed somewhere else.
 bool FGitSourceControlState::IsCheckedOutInOtherBranch(const FString& CurrentBranch) const
 {
 	// @todo Handle release branches here.
@@ -375,7 +393,7 @@ bool FGitSourceControlState::IsModified() const
 	// so for a clean "check-in" (commit) checked-out files unmodified should be removed from the changeset (the index)
 	// http://stackoverflow.com/questions/12357971/what-does-revert-unchanged-files-mean-in-perforce
 	//
-	// Thus, before check-in UE Editor call RevertUnchangedFiles() in PromptForCheckin() and CheckinFiles().
+	// Thus, before check-in Unreal Engine Editor call RevertUnchangedFiles() in PromptForCheckin() and CheckinFiles().
 	//
 	// So here we must take care to enumerate all states that need to be committed,
 	// all other will be discarded :

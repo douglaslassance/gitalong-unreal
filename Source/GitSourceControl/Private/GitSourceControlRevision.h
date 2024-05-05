@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "ISourceControlProvider.h"
 #include "ISourceControlRevision.h"
+#include "Misc/DateTime.h"
 
 /** Revision of a file, linked to a specific commit */
 class FGitSourceControlRevision : public ISourceControlRevision

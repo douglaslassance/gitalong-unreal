@@ -7,7 +7,8 @@
 #include "ISourceControlState.h"
 #include "ISourceControlProvider.h"
 #include "IGitSourceControlWorker.h"
-#include "GitSourceControlState.h"
+
+class FGitSourceControlState;
 
 class FGitSourceControlCommand;
 
@@ -52,6 +53,7 @@ public:
 	virtual void Init(bool bForceConnection = true) override;
 	virtual void Close() override;
 	virtual FText GetStatusText() const override;
+	virtual TMap<EStatus, FString> GetStatus() const override;
 	virtual bool IsEnabled() const override;
 	virtual bool IsAvailable() const override;
 	virtual const FName& GetName(void) const override;
@@ -64,12 +66,16 @@ public:
 	virtual FDelegateHandle RegisterSourceControlStateChanged_Handle(const FSourceControlStateChanged::FDelegate& SourceControlStateChanged) override;
 	virtual void UnregisterSourceControlStateChanged_Handle(FDelegateHandle Handle) override;
 	virtual ECommandResult::Type Execute(const FSourceControlOperationRef& InOperation, FSourceControlChangelistPtr InChangelist, const TArray<FString>& InFiles, EConcurrency::Type InConcurrency = EConcurrency::Synchronous, const FSourceControlOperationComplete& InOperationCompleteDelegate = FSourceControlOperationComplete()) override;
+	virtual bool CanExecuteOperation( const FSourceControlOperationRef& InOperation ) const override;
 	virtual bool CanCancelOperation( const FSourceControlOperationRef& InOperation ) const override;
 	virtual void CancelOperation( const FSourceControlOperationRef& InOperation ) override;
 	virtual bool UsesLocalReadOnlyState() const override;
 	virtual bool UsesChangelists() const override;
+	virtual bool UsesUncontrolledChangelists() const override;
 	virtual bool UsesCheckout() const override;
 	virtual bool UsesFileRevisions() const override;
+	virtual bool UsesSnapshots() const override;
+	virtual bool AllowsDiffAgainstDepot() const override;
 	virtual TOptional<bool> IsAtLatestRevision() const override;
 	virtual TOptional<int> GetNumLocalChanges() const override;
 	virtual void Tick() override;
@@ -210,8 +216,9 @@ private:
 	/** Gitalong version for feature checking */
 	FGitVersion GitalongVersion;
 
-	void HandleOnPackageSaveEvent(const FString& PackageFilename, UObject* Outer);
+	void OnPackageSavedWithContext(const FString& PackageFileName, UPackage* Package,
+	FObjectPostSaveContext ObjectSaveContext);
 	
 	/** The handle for running a Gitalong update after assets are saved. */
-	FDelegateHandle OnPackageSaveEventHandle;
+	FDelegateHandle OnPackageSavedWithContextEventHandle;
 };

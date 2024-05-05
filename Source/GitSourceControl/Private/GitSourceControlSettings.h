@@ -3,6 +3,10 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Containers/UnrealString.h"
+#include "HAL/CriticalSection.h"
+
+struct FScriptContainerElement;
 
 class FGitSourceControlSettings
 {

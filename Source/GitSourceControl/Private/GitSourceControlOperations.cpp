@@ -32,7 +32,7 @@ bool FGitConnectWorker::Execute(FGitSourceControlCommand& InCommand)
 			InCommand.bCommandSuccessful = GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToGitalongBinary, InCommand.PathToRepositoryRoot, ProjectDirs, InCommand.ErrorMessages, States);
 			if(!InCommand.bCommandSuccessful || InCommand.ErrorMessages.Num() > 0)
 			{
-				StaticCastSharedRef<FConnect>(InCommand.Operation)->SetErrorText(LOCTEXT("NotAGitRepository", "Failed to enable Git source control. You need to initialize the project as a Git repository first."));
+				StaticCastSharedRef<FConnect>(InCommand.Operation)->SetErrorText(LOCTEXT("NotAGitRepository", "Failed to enable Git revision control. You need to initialize the project as a Git repository first."));
 				InCommand.bCommandSuccessful = false;
 			}
 		} else {
@@ -42,7 +42,7 @@ bool FGitConnectWorker::Execute(FGitSourceControlCommand& InCommand)
 	}
 	else
 	{
-		StaticCastSharedRef<FConnect>(InCommand.Operation)->SetErrorText(LOCTEXT("GitNotFound", "Failed to enable Git source control. You need to install Git and specify a valid path to git executable."));
+		StaticCastSharedRef<FConnect>(InCommand.Operation)->SetErrorText(LOCTEXT("GitNotFound", "Failed to enable Git revision control. You need to install Git and specify a valid path to git executable."));
 		InCommand.bCommandSuccessful = false;
 	}
 

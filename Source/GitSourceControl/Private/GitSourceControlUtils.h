@@ -3,7 +3,9 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GitSourceControlState.h"
+#include "GitSourceControlRevision.h"
+
+class FGitSourceControlState;
 
 class FGitSourceControlCommand;
 
@@ -136,7 +138,7 @@ bool RunCommand(const FString& InCommand, const FString& InPathToBinary, const F
  *
  * @param	InPathToGitBinary	The path to the Git binary
  * @param	InRepositoryRoot	The Git repository from where to run the command - usually the Game directory
- * @param	InParameters		The parameters to the Git commit command
+ * @param	InParameter			The parameters to the Git commit command
  * @param	InFiles				The files to be operated on
  * @param	OutErrorMessages	Any errors (from StdErr) as an array per-line
  * @returns true if the command succeeded and returned no errors

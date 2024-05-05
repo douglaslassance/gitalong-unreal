@@ -11,6 +11,9 @@
 #include "ISourceControlOperation.h"
 #include "ISourceControlProvider.h"
 
+class SNotificationItem;
+namespace ETextCommit { enum Type : int; }
+
 enum class ECheckBoxState : uint8;
 
 class SGitSourceControlSettings : public SCompoundWidget

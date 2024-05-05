@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "GitSourceControlRevision.h"
+
 #include "ISourceControlModule.h"
 #include "HAL/FileManager.h"
 #include "Misc/Paths.h"
