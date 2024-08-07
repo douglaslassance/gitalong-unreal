@@ -25,17 +25,18 @@ namespace EWorkingCopyState
 	};
 }
 
+UENUM(meta = (Bitflags, UseEnumValuesAsMaskValuesInEditor = "true"))
 enum class ECommitSpread: uint8
 {
-	Unknown,
-	LocalUncommitted,
-	LocalActiveBranch,
-	LocalOtherBranch,
-	RemoteMatchingBranch,
-	RemoteOtherBranch,
-	CloneOtherBranch,
-	CloneMatchingBranch,
-	CloneUncommitted,
+	Unknown = 0,
+	LocalUncommitted = 1 << 0,
+	LocalActiveBranch = 1 << 1,
+	LocalOtherBranch = 1 << 2,
+	RemoteMatchingBranch = 1 << 3,
+	RemoteOtherBranch = 1 << 4,
+	CloneOtherBranch = 1 << 5,
+	CloneMatchingBranch = 1 << 6,
+	CloneUncommitted = 1 << 7,
 };
 ENUM_CLASS_FLAGS(ECommitSpread);
 

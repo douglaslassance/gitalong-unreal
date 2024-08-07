@@ -5,6 +5,9 @@
 #include <cstdio>
 #include <string>
 
+#include <chrono>
+using namespace std::chrono;
+
 #include "GitSourceControlProvider.h"
 #include "GitSourceControlCommand.h"
 #include "GitSourceControlState.h"
@@ -106,9 +109,7 @@ static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPat
 
 	FullCommand += LoggableCommand;
 	
-#if UE_BUILD_DEBUG
 	UE_LOG(LogSourceControl, Log, TEXT("RunCommandInternalRaw: '%s %s'"), *InPathToBinary, *LoggableCommand);
-#endif
 	
 #if PLATFORM_MAC
 	// The Cocoa application does not inherit shell environment variables, so add the path expected to have git-lfs to PATH
@@ -133,8 +134,10 @@ static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPat
 		FullCommand = FString::Printf(TEXT("PATH=\"%s%s%s\" \"%s\" %s"), *InstallPath, FPlatformMisc::GetPathVarDelimiter(), *PathEnv, *InPathToBinary, *FullCommand);
 	}
 #endif
+	auto start = high_resolution_clock::now();
 	FPlatformProcess::ExecProcess(*InPathToBinary, *FullCommand, &ReturnCode, &OutResults, &OutErrors);
-
+	auto stop = high_resolution_clock::now();
+	auto duration = duration_cast<milliseconds>(stop - start);
 #if UE_BUILD_DEBUG
 
 	if (OutResults.IsEmpty())
@@ -158,7 +161,12 @@ static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPat
 		}
 	}
 #endif
-
+	if(!OutErrors.IsEmpty())
+	{
+		UE_LOG(LogSourceControl, Error, TEXT("RunCommandInternalRaw(%s): %s"), *InCommand, *OutErrors);
+	}
+	UE_LOG(LogSourceControl, Log, TEXT("RunCommandInternalRaw(%s): Duration=%lld ms"), *InCommand, duration.count());
+	
 	return ReturnCode == 0;
 }
 
@@ -1026,7 +1034,7 @@ bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InPathToGi
 		if(bResult)
 		{
 			TArray<FString> GitalongErrorMessages;
-			RunCommand(TEXT("status"), InPathToGitalongBinary, InRepositoryRoot, GitalongParameters, InFiles, GitalongResults, GitalongErrorMessages);
+			RunCommand(TEXT("status"), InPathToGitalongBinary, InRepositoryRoot, GitalongParameters, OnePath, GitalongResults, GitalongErrorMessages);
 			ParseStatusResults(InPathToGitBinary, InPathToGitalongBinary, InRepositoryRoot, Files.Value, Results, GitalongResults, OutStates);
 		}
 	}

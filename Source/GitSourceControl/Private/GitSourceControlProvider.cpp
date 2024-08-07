@@ -347,18 +347,18 @@ bool FGitSourceControlProvider::UsesLocalReadOnlyState() const
 {
     std::string Output = "";
 #if PLATFORM_WINDOWS
-    const std::shared_ptr<FILE> Pipe(_popen("gitalong config modify-permissions", "r"), _pclose);
+    //const std::shared_ptr<FILE> Pipe(_popen("gitalong config modify-permissions", "r"), _pclose);
 #else
     const std::shared_ptr<FILE> Pipe(popen("gitalong config modify-permissions", "r"), pclose);
 #endif
-    if (Pipe)
-    {
-	    while (!feof(Pipe.get())) {
-	        if (char Buffer[128]; fgets(Buffer, 128, Pipe.get()) != nullptr)
-	            Output += Buffer;
-	    }
-		return Output.find("true") != std::string::npos;
-    }
+  //   if (Pipe)
+  //   {
+	 //    while (!feof(Pipe.get())) {
+	 //        if (char Buffer[128]; fgets(Buffer, 128, Pipe.get()) != nullptr)
+	 //            Output += Buffer;
+	 //    }
+		// return Output.find("true") != std::string::npos;
+  //   }
 	return false;
 }
 
