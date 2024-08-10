@@ -299,9 +299,8 @@ bool FGitSourceControlState::IsCheckedOut() const
 	{
 		return true;
 	}
-	FGitSourceControlModule& GitSourceControl = FModuleManager::GetModuleChecked<FGitSourceControlModule>("GitSourceControl");
-	const FGitSourceControlProvider& Provider = GitSourceControl.GetProvider();
-	return Provider.PendingSaves.Contains(LocalFilename);
+	
+	return false;
 }
 
 bool FGitSourceControlState::IsCheckedOutOther(FString* Who) const

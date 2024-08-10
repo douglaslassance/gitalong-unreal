@@ -147,8 +147,7 @@ void FGitSourceControlProvider::Close()
 	UPackage::PackageSavedWithContextEvent.Remove(OnPackageSavedWithContextEventHandle);
 }
 
-void FGitSourceControlProvider::OnPackageSavedWithContext(const FString& PackageFileName, UPackage* Package,
-	FObjectPostSaveContext ObjectSaveContext)
+void FGitSourceControlProvider::OnPackageSavedWithContext(const FString& PackageFileName, UPackage* Package, FObjectPostSaveContext ObjectSaveContext)
 {
 	TArray<FString> InResults;
 	TArray<FString> InErrorMessages;
@@ -157,14 +156,9 @@ void FGitSourceControlProvider::OnPackageSavedWithContext(const FString& Package
 	const FString FullPath = FPaths::ConvertRelativePathToFull(PackageFileName);
 	InFiles.Add(FullPath);
 
-	if (PendingSaves.Contains(FullPath))
-	{
-		PendingSaves.Remove(FullPath);
-	}
-
-	// @todo Check if Gitalong preferences are set to not track uncommitted files in which case this not necessary.
-	// @todo This is not ideal as the Gitalong update is expensive and we are running of each file saved.
-	GitSourceControlUtils::RunCommand(TEXT("update"), GitSourceControlUtils::FindGitalongBinaryPath(), FullPath, TArray<FString>(), InFiles, InResults, InErrorMessages);
+	
+	
+	GitSourceControlUtils::RunClaim(GitSourceControlUtils::FindGitalongBinaryPath(), FullPath, TArray<FString>(), InFiles, InResults, InErrorMessages);
 	UE_LOG(LogSourceControl, Log, TEXT("Package Saved Event"));
 }
 

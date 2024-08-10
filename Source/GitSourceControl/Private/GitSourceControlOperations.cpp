@@ -62,20 +62,10 @@ FName FGitCheckOutWorker::GetName() const
 bool FGitCheckOutWorker::Execute(FGitSourceControlCommand& InCommand)
 {
 	check(InCommand.Operation->GetName() == GetName());
-	InCommand.bCommandSuccessful = true;
-	FGitSourceControlModule& GitSourceControl = FModuleManager::GetModuleChecked<FGitSourceControlModule>("GitSourceControl");
-	FGitSourceControlProvider& Provider = GitSourceControl.GetProvider();
-	for(const auto& File : InCommand.Files)
-	{
-		if(FPlatformFileManager::Get().GetPlatformFile().SetReadOnly(*File, false))
-		{
-			// @todo We should just save the asset here as with Gitalong only modified files are considered checked out.
-			Provider.PendingSaves.Add(File);
-		} else
-		{
-			InCommand.bCommandSuccessful = false;
-		}
-	}
+	InCommand.bCommandSuccessful = GitSourceControlUtils::RunClaim(InCommand.PathToGitalongBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), InCommand.Files, InCommand.InfoMessages, InCommand.ErrorMessages);
+	// now update the status of our files
+	GitSourceControlUtils::RunUpdateStatus(InCommand.PathToGitBinary, InCommand.PathToGitalongBinary, InCommand.PathToRepositoryRoot, InCommand.Files, InCommand.ErrorMessages, States);
+
 	return InCommand.bCommandSuccessful;
 }
 

@@ -30,6 +30,7 @@ namespace GitSourceControlConstants
 {
 	/** The maximum number of files we submit in a single Git command */
 	const int32 MaxFilesPerBatch = 50;
+	const int32 MaxFilesPerClaimBatch = 1;
 }
 
 FGitScopedTempFile::FGitScopedTempFile(const FText& InText)
@@ -98,7 +99,7 @@ static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPat
 	{
 		LoggableCommand += TEXT(" ");
 		LoggableCommand += Parameter;
-	}
+	} 
 	for(const auto& File : InFiles)
 	{
 		LoggableCommand += TEXT(" \"");
@@ -513,6 +514,52 @@ bool RunCommit(const FString& InPathToGitBinary, const FString& InRepositoryRoot
 	}
 
 	return bResult;
+}
+
+bool RunClaim(const FString& InPathToGitalongBinary, const FString& InRepositoryRoot, const TArray<FString>& InParameters, const TArray<FString>& InFiles, TArray<FString>& OutResults, TArray<FString>& OutErrorMessages)
+{
+    	bool bResult = true;
+
+    	if(InFiles.Num() > GitSourceControlConstants::MaxFilesPerClaimBatch)
+    	{
+    		// Batch files up so we dont exceed command-line limits
+    		int32 FileCount = 0;
+    		{
+    			TArray<FString> FilesInBatch;
+    			for(int32 FileIndex = 0; FileIndex < GitSourceControlConstants::MaxFilesPerClaimBatch; FileIndex++, FileCount++)
+    			{
+    				FilesInBatch.Add(InFiles[FileCount]);
+    			}
+    			// First batch is a simple "git commit" command with only the first files
+    			bResult &= RunCommandInternal(TEXT("claim"), InPathToGitalongBinary, InRepositoryRoot, InParameters, FilesInBatch, OutResults, OutErrorMessages);
+    		}
+
+    		TArray<FString> Parameters;
+    		for(const auto& Parameter : InParameters)
+    		{
+    			Parameters.Add(Parameter);
+    		}
+    		while(FileCount < InFiles.Num())
+    		{
+    			TArray<FString> FilesInBatch;
+    			for(int32 FileIndex = 0; FileCount < InFiles.Num() && FileIndex < GitSourceControlConstants::MaxFilesPerBatch; FileIndex++, FileCount++)
+    			{
+    				FilesInBatch.Add(InFiles[FileCount]);
+    			}
+    			// Next batches "amend" the commit with some more files
+    			TArray<FString> BatchResults;
+    			TArray<FString> BatchErrors;
+    			bResult &= RunCommandInternal(TEXT("claim"), InPathToGitalongBinary, InRepositoryRoot, Parameters, FilesInBatch, BatchResults, BatchErrors);
+    			OutResults += BatchResults;
+    			OutErrorMessages += BatchErrors;
+    		}
+    	}
+    	else
+		{
+			bResult = RunCommandInternal(TEXT("claim"), InPathToGitalongBinary, InRepositoryRoot, InParameters, InFiles, OutResults, OutErrorMessages);
+		}
+
+    	return bResult;
 }
 
 /**
