@@ -888,6 +888,29 @@ void AbsoluteFilenames(const FString& InRepositoryRoot, TArray<FString>& InFileN
 	}
 }
 
+void FilterOnlyInSameDirectory(const FString& InRepositoryRoot, TArray<FString>& InFileNames)
+{
+	for(auto& FileName : InFileNames)
+	{
+		// Substract the repository root path to get the relative path. If we are in a subdirectory, trash the file.
+		if (!FileName.StartsWith(InRepositoryRoot))
+		{
+			FileName.Empty();
+		}
+		else
+		{
+			FString ChoppedFileName = FileName.RightChop(InRepositoryRoot.Len() + 1);
+			FString CleanFileName = FPaths::GetCleanFilename(ChoppedFileName);
+			if(ChoppedFileName.Compare(CleanFileName) != 0)
+			{
+				FileName.Empty();
+			}
+		}
+	}
+	// Remove empty strings
+	InFileNames.RemoveAll([](const FString& FileName) { return FileName.IsEmpty(); });
+}
+
 /** Run a 'git ls-files' command to get all files tracked by Git recursively in a directory.
  *
  * Called in case of a "directory status" (no file listed in the command) when using the "Submit to Revision Control" menu.
@@ -902,6 +925,21 @@ static bool ListFilesInDirectoryRecurse(const FString& InPathToGitBinary, const 
 	return bResult;
 }
 
+	/** Run a 'git ls-files' command to get all files tracked by Git in a directory.
+ *
+ * Called in case of a "directory status" (no file listed in the command) when using the "Submit to Revision Control" menu.
+*/
+static bool ListFilesInDirectory(const FString& InPathToGitBinary, const FString& InRepositoryRoot, const FString& InDirectory, TArray<FString>& OutFiles)
+{
+	TArray<FString> ErrorMessages;
+	TArray<FString> Directory;
+	Directory.Add(InDirectory);
+	const bool bResult = RunCommandInternal(TEXT("ls-files"), InPathToGitBinary, InRepositoryRoot, TArray<FString>(), Directory, OutFiles, ErrorMessages);
+	AbsoluteFilenames(InRepositoryRoot, OutFiles);
+	FilterOnlyInSameDirectory(InDirectory, OutFiles);
+	return bResult;
+}
+	
 /** Parse the array of strings results of a 'git status' command for a provided list of files all in a common directory
  *
  * Called in case of a normal refresh of status on a list of assets in a the Content Browser (or user selected "Refresh" context menu).
@@ -1009,17 +1047,17 @@ static void ParseStatusResults(const FString& InPathToGitBinary, const FString& 
 {
 	if(1 == InFiles.Num() && FPaths::DirectoryExists(InFiles[0]))
 	{
-		// 1) Special case for "status" of a directory: requires to get the list of files by ourselves.
-		//   (this is triggered by the "Submit to Revision Control" menu)
-		TArray<FString> Files;
-		const FString& Directory = InFiles[0];
-		if(const bool bResult = ListFilesInDirectoryRecurse(InPathToGitBinary, InRepositoryRoot, Directory, Files))
-		{
-			ParseFileStatusResult(InPathToGitBinary, InPathToGitalongBinary, InRepositoryRoot, Files, InResults, InGitalongResults, OutStates);
-		}
-		// The above cannot detect deleted assets since there is no file left to enumerate (either by the Content Browser or by git ls-files)
-		// => so we also parse the status results to explicitly look for Deleted/Missing assets
-		ParseDirectoryStatusResult(InPathToGitBinary, InRepositoryRoot, InResults, OutStates);
+		// // 1) Special case for "status" of a directory: requires to get the list of files by ourselves.
+		// //   (this is triggered by the "Submit to Revision Control" menu)
+		// TArray<FString> Files;
+		// const FString& Directory = InFiles[0];
+		// if(const bool bResult = ListFilesInDirectoryRecurse(InPathToGitBinary, InRepositoryRoot, Directory, Files))
+		// {
+		// 	ParseFileStatusResult(InPathToGitBinary, InPathToGitalongBinary, InRepositoryRoot, Files, InResults, InGitalongResults, OutStates);
+		// }
+		// // The above cannot detect deleted assets since there is no file left to enumerate (either by the Content Browser or by git ls-files)
+		// // => so we also parse the status results to explicitly look for Deleted/Missing assets
+		// ParseDirectoryStatusResult(InPathToGitBinary, InRepositoryRoot, InResults, OutStates);
 	}
 	else
 	{
@@ -1076,13 +1114,32 @@ bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InPathToGi
 			OnePath.Add(Path);
 		}
 		TArray<FString> ErrorMessages;
+		if(FPaths::DirectoryExists(OnePath[0]))
+		{
+			// 1) Special case for "status" of a directory: requires to get the list of files by ourselves.
+			//   (this is triggered by the "Submit to Revision Control" menu)
+			TArray<FString> DirectoryFiles;
+			const FString& Directory = OnePath[0];
+			if(const bool bResult = ListFilesInDirectory(InPathToGitBinary, InRepositoryRoot, Directory, DirectoryFiles))
+			{
+				TArray<FString> GitalongErrorMessages;
+				RunCommand(TEXT("status"), InPathToGitalongBinary, InRepositoryRoot, GitalongParameters, DirectoryFiles, GitalongResults, GitalongErrorMessages);
+				ParseStatusResults(InPathToGitBinary, InPathToGitalongBinary, InRepositoryRoot, DirectoryFiles, Results, GitalongResults, OutStates);
+				continue;
+			}
+			// The above cannot detect deleted assets since there is no file left to enumerate (either by the Content Browser or by git ls-files)
+			// => so we also parse the status results to explicitly look for Deleted/Missing assets
+			ParseDirectoryStatusResult(InPathToGitBinary, InRepositoryRoot, Results, OutStates);
+			continue;
+		}
+		
 		const bool bResult = RunCommand(TEXT("status"), InPathToGitBinary, InRepositoryRoot, Parameters, OnePath, Results, ErrorMessages);
 		OutErrorMessages.Append(ErrorMessages);
 		if(bResult)
 		{
 			TArray<FString> GitalongErrorMessages;
 			RunCommand(TEXT("status"), InPathToGitalongBinary, InRepositoryRoot, GitalongParameters, OnePath, GitalongResults, GitalongErrorMessages);
-			ParseStatusResults(InPathToGitBinary, InPathToGitalongBinary, InRepositoryRoot, Files.Value, Results, GitalongResults, OutStates);
+			ParseStatusResults(InPathToGitBinary, InPathToGitalongBinary, InRepositoryRoot, OnePath, Results, GitalongResults, OutStates);
 		}
 	}
 

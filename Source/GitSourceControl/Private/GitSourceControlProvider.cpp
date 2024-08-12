@@ -98,6 +98,13 @@ void FGitSourceControlProvider::CheckGitalongAvailability()
 	if(!PathToGitalongBinary.IsEmpty())
 	{
 		bGitalongAvailable = GitSourceControlUtils::CheckGitalongAvailability(PathToGitalongBinary, &GitalongVersion);
+		if (bGitalongAvailable)
+        {
+            // Load config environment variables.
+			FString GitalongJsonbinAccessKey = FPlatformMisc::GetEnvironmentVariable(TEXT("PLAYSTHETIC_GITALONG_JSONBIN_ACCESS_KEY"));
+            // Log the value for environment variabel key PLAYSTHETIC_GITALONG_JSONBIN_ACCESS_KEY.
+            UE_LOG(LogSourceControl, Log, TEXT("PLAYSTHETIC_GITALONG_JSONBIN_ACCESS_KEY: %s"), *GitalongJsonbinAccessKey);
+        }
 	}
 	else
 	{
