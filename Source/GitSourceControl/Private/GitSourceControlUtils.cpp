@@ -1047,17 +1047,8 @@ static void ParseStatusResults(const FString& InPathToGitBinary, const FString& 
 {
 	if(1 == InFiles.Num() && FPaths::DirectoryExists(InFiles[0]))
 	{
-		// // 1) Special case for "status" of a directory: requires to get the list of files by ourselves.
-		// //   (this is triggered by the "Submit to Revision Control" menu)
-		// TArray<FString> Files;
-		// const FString& Directory = InFiles[0];
-		// if(const bool bResult = ListFilesInDirectoryRecurse(InPathToGitBinary, InRepositoryRoot, Directory, Files))
-		// {
-		// 	ParseFileStatusResult(InPathToGitBinary, InPathToGitalongBinary, InRepositoryRoot, Files, InResults, InGitalongResults, OutStates);
-		// }
-		// // The above cannot detect deleted assets since there is no file left to enumerate (either by the Content Browser or by git ls-files)
-		// // => so we also parse the status results to explicitly look for Deleted/Missing assets
-		// ParseDirectoryStatusResult(InPathToGitBinary, InRepositoryRoot, InResults, OutStates);
+		// Skip folders
+		return;
 	}
 	else
 	{
