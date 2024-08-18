@@ -166,7 +166,7 @@ static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPat
 	{
 		UE_LOG(LogSourceControl, Error, TEXT("RunCommandInternalRaw(%s): %s"), *InCommand, *OutErrors);
 	}
-	UE_LOG(LogSourceControl, Log, TEXT("RunCommandInternalRaw(%s): Duration=%lld ms"), *InCommand, duration.count());
+	UE_LOG(LogSourceControl, Log, TEXT("RunCommandInternalRaw(%s): Duration=%lld ms Return=%s"), *InCommand, duration.count(), *OutResults);
 	
 	return ReturnCode == 0;
 }
