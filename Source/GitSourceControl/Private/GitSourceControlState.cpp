@@ -278,10 +278,7 @@ bool FGitSourceControlState::CanCheckIn() const
 
 bool FGitSourceControlState::CanCheckout() const
 {
-	if (LastCommitSpread == ECommitSpread::Unknown) {
-		return true;
-	}
-	return !(IsCheckedOut() || IsCheckedOutOther() || IsCheckedOutInOtherBranch()) && IsCurrent();
+	return false;
 }
 
 bool FGitSourceControlState::IsCheckedOut() const
