@@ -94,7 +94,7 @@ FSlateIcon FGitSourceControlState::GetIcon() const
 	case EWorkingCopyState::Unchanged: // Unchanged is the same as "Pristine" (not checked out) for Perforce, ie no icon
 	case EWorkingCopyState::Ignored:
 	default:
-		if (IsCheckedOut())
+		if (IsTruelyCheckedOut())
 		{
 			return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Perforce.CheckedOut");
 		}
@@ -282,6 +282,11 @@ bool FGitSourceControlState::CanCheckout() const
 }
 
 bool FGitSourceControlState::IsCheckedOut() const
+{
+	return IsSourceControlled();
+}
+
+bool FGitSourceControlState::IsTruelyCheckedOut() const
 {
 	if (LastCommitSpread == ECommitSpread::Unknown) {
 		return false;
