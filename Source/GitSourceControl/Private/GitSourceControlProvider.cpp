@@ -162,10 +162,9 @@ void FGitSourceControlProvider::OnPackageSavedWithContext(const FString& Package
 	
 	const FString FullPath = FPaths::ConvertRelativePathToFull(PackageFileName);
 	InFiles.Add(FullPath);
+	
+	GitSourceControlUtils::RunCommand(TEXT("update"), GitSourceControlUtils::FindGitalongBinaryPath(), FullPath, TArray<FString>(), TArray<FString>(), InFiles, InResults);
 
-	
-	
-	GitSourceControlUtils::RunClaim(GitSourceControlUtils::FindGitalongBinaryPath(), FullPath, TArray<FString>(), InFiles, InResults, InErrorMessages);
 	UE_LOG(LogSourceControl, Log, TEXT("Package Saved Event"));
 }
 
