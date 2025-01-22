@@ -83,7 +83,7 @@ static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPat
 			}
 		}
 		// @todo This is not safe as people could point to an executable with an unexpected name.
-		if (InPathToBinary.EndsWith("git") || InPathToBinary.EndsWith("git.exe") || InPathToBinary.EndsWith("gitalong-gui") || InPathToBinary.EndsWith("gitalong-gui.exe"))
+		if (InPathToBinary.EndsWith("git") || InPathToBinary.EndsWith("git.exe") || InPathToBinary.EndsWith("gitalong") || InPathToBinary.EndsWith("gitalong.exe"))
 		{
 			// Specify the working copy (the root) of the git repository (before the command itself)
 			FullCommand  = TEXT("-C \"");
@@ -216,7 +216,7 @@ FString FindGitBinaryPath()
 
 FString FindGitalongBinaryPath()
 {
-	return FindBinaryPath("gitalong-gui");
+	return FindBinaryPath("gitalong");
 }
 
 bool CheckGitAvailability(const FString& InPathToBinary, FGitVersion *OutVersion)
