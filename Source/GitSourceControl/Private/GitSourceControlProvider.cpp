@@ -50,6 +50,11 @@ void FGitSourceControlProvider::Init(bool bForceConnection)
 			UE_LOG(LogSourceControl, Log, TEXT("Binding FGitSourceControlProvider::HandleOnPackageSaveEvent to PackageSavedEvent"));
 			OnPackageSavedWithContextEventHandle = UPackage::PackageSavedWithContextEvent.AddRaw(this, &FGitSourceControlProvider::OnPackageSavedWithContext);
 		}
+		
+		TArray<FString> InResults;
+		TArray<FString> InFiles;
+		GitSourceControlUtils::RunCommand(TEXT("update"), GitSourceControlUtils::FindGitalongBinaryPath(), FPaths::GetProjectFilePath(), TArray<FString>(), TArray<FString>(), InFiles, InResults);
+
 	}
 }
 
