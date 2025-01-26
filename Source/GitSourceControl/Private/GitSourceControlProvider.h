@@ -155,8 +155,6 @@ public:
 
 	/** Remove a named file from the state cache */
 	bool RemoveFileFromCache(const FString& Filename);
-
-	TArray<FString> PendingSaves;
 	
 private:
 

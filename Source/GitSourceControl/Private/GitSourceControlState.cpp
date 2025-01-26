@@ -94,7 +94,7 @@ FSlateIcon FGitSourceControlState::GetIcon() const
 	case EWorkingCopyState::Unchanged: // Unchanged is the same as "Pristine" (not checked out) for Perforce, ie no icon
 	case EWorkingCopyState::Ignored:
 	default:
-		if (IsCheckedOut())
+		if (IsTruelyCheckedOut())
 		{
 			return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Perforce.CheckedOut");
 		}
@@ -278,13 +278,15 @@ bool FGitSourceControlState::CanCheckIn() const
 
 bool FGitSourceControlState::CanCheckout() const
 {
-	if (LastCommitSpread == ECommitSpread::Unknown) {
-		return true;
-	}
-	return !(IsCheckedOut() || IsCheckedOutOther() || IsCheckedOutInOtherBranch()) && IsCurrent();
+	return false;
 }
 
 bool FGitSourceControlState::IsCheckedOut() const
+{
+	return IsSourceControlled();
+}
+
+bool FGitSourceControlState::IsTruelyCheckedOut() const
 {
 	if (LastCommitSpread == ECommitSpread::Unknown) {
 		return false;
@@ -299,9 +301,8 @@ bool FGitSourceControlState::IsCheckedOut() const
 	{
 		return true;
 	}
-	FGitSourceControlModule& GitSourceControl = FModuleManager::GetModuleChecked<FGitSourceControlModule>("GitSourceControl");
-	const FGitSourceControlProvider& Provider = GitSourceControl.GetProvider();
-	return Provider.PendingSaves.Contains(LocalFilename);
+	
+	return false;
 }
 
 bool FGitSourceControlState::IsCheckedOutOther(FString* Who) const

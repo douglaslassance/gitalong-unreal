@@ -50,6 +50,11 @@ void FGitSourceControlProvider::Init(bool bForceConnection)
 			UE_LOG(LogSourceControl, Log, TEXT("Binding FGitSourceControlProvider::HandleOnPackageSaveEvent to PackageSavedEvent"));
 			OnPackageSavedWithContextEventHandle = UPackage::PackageSavedWithContextEvent.AddRaw(this, &FGitSourceControlProvider::OnPackageSavedWithContext);
 		}
+		
+		TArray<FString> InResults;
+		TArray<FString> InFiles;
+		GitSourceControlUtils::RunCommand(TEXT("update"), GitSourceControlUtils::FindGitalongBinaryPath(), FPaths::GetProjectFilePath(), TArray<FString>(), TArray<FString>(), InFiles, InResults);
+
 	}
 }
 
@@ -98,6 +103,13 @@ void FGitSourceControlProvider::CheckGitalongAvailability()
 	if(!PathToGitalongBinary.IsEmpty())
 	{
 		bGitalongAvailable = GitSourceControlUtils::CheckGitalongAvailability(PathToGitalongBinary, &GitalongVersion);
+		if (bGitalongAvailable)
+        {
+            // Load config environment variables.
+			FString GitalongJsonbinAccessKey = FPlatformMisc::GetEnvironmentVariable(TEXT("PLAYSTHETIC_GITALONG_JSONBIN_ACCESS_KEY"));
+            // Log the value for environment variabel key PLAYSTHETIC_GITALONG_JSONBIN_ACCESS_KEY.
+            UE_LOG(LogSourceControl, Log, TEXT("PLAYSTHETIC_GITALONG_JSONBIN_ACCESS_KEY: %s"), *GitalongJsonbinAccessKey);
+        }
 	}
 	else
 	{
@@ -147,8 +159,7 @@ void FGitSourceControlProvider::Close()
 	UPackage::PackageSavedWithContextEvent.Remove(OnPackageSavedWithContextEventHandle);
 }
 
-void FGitSourceControlProvider::OnPackageSavedWithContext(const FString& PackageFileName, UPackage* Package,
-	FObjectPostSaveContext ObjectSaveContext)
+void FGitSourceControlProvider::OnPackageSavedWithContext(const FString& PackageFileName, UPackage* Package, FObjectPostSaveContext ObjectSaveContext)
 {
 	TArray<FString> InResults;
 	TArray<FString> InErrorMessages;
@@ -156,15 +167,9 @@ void FGitSourceControlProvider::OnPackageSavedWithContext(const FString& Package
 	
 	const FString FullPath = FPaths::ConvertRelativePathToFull(PackageFileName);
 	InFiles.Add(FullPath);
+	
+	GitSourceControlUtils::RunCommand(TEXT("update"), GitSourceControlUtils::FindGitalongBinaryPath(), FullPath, TArray<FString>(), TArray<FString>(), InFiles, InResults);
 
-	if (PendingSaves.Contains(FullPath))
-	{
-		PendingSaves.Remove(FullPath);
-	}
-
-	// @todo Check if Gitalong preferences are set to not track uncommitted files in which case this not necessary.
-	// @todo This is not ideal as the Gitalong update is expensive and we are running of each file saved.
-	GitSourceControlUtils::RunCommand(TEXT("update"), GitSourceControlUtils::FindGitalongBinaryPath(), FullPath, TArray<FString>(), InFiles, InResults, InErrorMessages);
 	UE_LOG(LogSourceControl, Log, TEXT("Package Saved Event"));
 }
 
@@ -347,18 +352,18 @@ bool FGitSourceControlProvider::UsesLocalReadOnlyState() const
 {
     std::string Output = "";
 #if PLATFORM_WINDOWS
-    const std::shared_ptr<FILE> Pipe(_popen("gitalong config modify-permissions", "r"), _pclose);
+    //const std::shared_ptr<FILE> Pipe(_popen("gitalong config modify-permissions", "r"), _pclose);
 #else
     const std::shared_ptr<FILE> Pipe(popen("gitalong config modify-permissions", "r"), pclose);
 #endif
-    if (Pipe)
-    {
-	    while (!feof(Pipe.get())) {
-	        if (char Buffer[128]; fgets(Buffer, 128, Pipe.get()) != nullptr)
-	            Output += Buffer;
-	    }
-		return Output.find("true") != std::string::npos;
-    }
+  //   if (Pipe)
+  //   {
+	 //    while (!feof(Pipe.get())) {
+	 //        if (char Buffer[128]; fgets(Buffer, 128, Pipe.get()) != nullptr)
+	 //            Output += Buffer;
+	 //    }
+		// return Output.find("true") != std::string::npos;
+  //   }
 	return false;
 }
 

@@ -5,6 +5,9 @@
 #include <cstdio>
 #include <string>
 
+#include <chrono>
+using namespace std::chrono;
+
 #include "GitSourceControlProvider.h"
 #include "GitSourceControlCommand.h"
 #include "GitSourceControlState.h"
@@ -27,6 +30,7 @@ namespace GitSourceControlConstants
 {
 	/** The maximum number of files we submit in a single Git command */
 	const int32 MaxFilesPerBatch = 50;
+	const int32 MaxFilesPerClaimBatch = 1;
 }
 
 FGitScopedTempFile::FGitScopedTempFile(const FText& InText)
@@ -79,7 +83,7 @@ static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPat
 			}
 		}
 		// @todo This is not safe as people could point to an executable with an unexpected name.
-		if (InPathToBinary.EndsWith("git") || InPathToBinary.EndsWith("git.exe") || InPathToBinary.EndsWith("gitalong-gui") || InPathToBinary.EndsWith("gitalong-gui.exe"))
+		if (InPathToBinary.EndsWith("git") || InPathToBinary.EndsWith("git.exe") || InPathToBinary.EndsWith("gitalong") || InPathToBinary.EndsWith("gitalong.exe"))
 		{
 			// Specify the working copy (the root) of the git repository (before the command itself)
 			FullCommand  = TEXT("-C \"");
@@ -95,7 +99,7 @@ static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPat
 	{
 		LoggableCommand += TEXT(" ");
 		LoggableCommand += Parameter;
-	}
+	} 
 	for(const auto& File : InFiles)
 	{
 		LoggableCommand += TEXT(" \"");
@@ -106,9 +110,7 @@ static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPat
 
 	FullCommand += LoggableCommand;
 	
-#if UE_BUILD_DEBUG
 	UE_LOG(LogSourceControl, Log, TEXT("RunCommandInternalRaw: '%s %s'"), *InPathToBinary, *LoggableCommand);
-#endif
 	
 #if PLATFORM_MAC
 	// The Cocoa application does not inherit shell environment variables, so add the path expected to have git-lfs to PATH
@@ -133,8 +135,10 @@ static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPat
 		FullCommand = FString::Printf(TEXT("PATH=\"%s%s%s\" \"%s\" %s"), *InstallPath, FPlatformMisc::GetPathVarDelimiter(), *PathEnv, *InPathToBinary, *FullCommand);
 	}
 #endif
+	auto start = high_resolution_clock::now();
 	FPlatformProcess::ExecProcess(*InPathToBinary, *FullCommand, &ReturnCode, &OutResults, &OutErrors);
-
+	auto stop = high_resolution_clock::now();
+	auto duration = duration_cast<milliseconds>(stop - start);
 #if UE_BUILD_DEBUG
 
 	if (OutResults.IsEmpty())
@@ -158,7 +162,12 @@ static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPat
 		}
 	}
 #endif
-
+	if(!OutErrors.IsEmpty())
+	{
+		UE_LOG(LogSourceControl, Error, TEXT("RunCommandInternalRaw(%s): %s"), *InCommand, *OutErrors);
+	}
+	UE_LOG(LogSourceControl, Log, TEXT("RunCommandInternalRaw(%s): Duration=%lld ms Return=%s"), *InCommand, duration.count(), *OutResults);
+	
 	return ReturnCode == 0;
 }
 
@@ -207,7 +216,7 @@ FString FindGitBinaryPath()
 
 FString FindGitalongBinaryPath()
 {
-	return FindBinaryPath("gitalong-gui");
+	return FindBinaryPath("gitalong");
 }
 
 bool CheckGitAvailability(const FString& InPathToBinary, FGitVersion *OutVersion)
@@ -505,6 +514,52 @@ bool RunCommit(const FString& InPathToGitBinary, const FString& InRepositoryRoot
 	}
 
 	return bResult;
+}
+
+bool RunClaim(const FString& InPathToGitalongBinary, const FString& InRepositoryRoot, const TArray<FString>& InParameters, const TArray<FString>& InFiles, TArray<FString>& OutResults, TArray<FString>& OutErrorMessages)
+{
+    	bool bResult = true;
+
+    	if(InFiles.Num() > GitSourceControlConstants::MaxFilesPerClaimBatch)
+    	{
+    		// Batch files up so we dont exceed command-line limits
+    		int32 FileCount = 0;
+    		{
+    			TArray<FString> FilesInBatch;
+    			for(int32 FileIndex = 0; FileIndex < GitSourceControlConstants::MaxFilesPerClaimBatch; FileIndex++, FileCount++)
+    			{
+    				FilesInBatch.Add(InFiles[FileCount]);
+    			}
+    			// First batch is a simple "git commit" command with only the first files
+    			bResult &= RunCommandInternal(TEXT("claim"), InPathToGitalongBinary, InRepositoryRoot, InParameters, FilesInBatch, OutResults, OutErrorMessages);
+    		}
+
+    		TArray<FString> Parameters;
+    		for(const auto& Parameter : InParameters)
+    		{
+    			Parameters.Add(Parameter);
+    		}
+    		while(FileCount < InFiles.Num())
+    		{
+    			TArray<FString> FilesInBatch;
+    			for(int32 FileIndex = 0; FileCount < InFiles.Num() && FileIndex < GitSourceControlConstants::MaxFilesPerBatch; FileIndex++, FileCount++)
+    			{
+    				FilesInBatch.Add(InFiles[FileCount]);
+    			}
+    			// Next batches "amend" the commit with some more files
+    			TArray<FString> BatchResults;
+    			TArray<FString> BatchErrors;
+    			bResult &= RunCommandInternal(TEXT("claim"), InPathToGitalongBinary, InRepositoryRoot, Parameters, FilesInBatch, BatchResults, BatchErrors);
+    			OutResults += BatchResults;
+    			OutErrorMessages += BatchErrors;
+    		}
+    	}
+    	else
+		{
+			bResult = RunCommandInternal(TEXT("claim"), InPathToGitalongBinary, InRepositoryRoot, InParameters, InFiles, OutResults, OutErrorMessages);
+		}
+
+    	return bResult;
 }
 
 /**
@@ -833,6 +888,29 @@ void AbsoluteFilenames(const FString& InRepositoryRoot, TArray<FString>& InFileN
 	}
 }
 
+void FilterOnlyInSameDirectory(const FString& InRepositoryRoot, TArray<FString>& InFileNames)
+{
+	for(auto& FileName : InFileNames)
+	{
+		// Substract the repository root path to get the relative path. If we are in a subdirectory, trash the file.
+		if (!FileName.StartsWith(InRepositoryRoot))
+		{
+			FileName.Empty();
+		}
+		else
+		{
+			FString ChoppedFileName = FileName.RightChop(InRepositoryRoot.Len() + 1);
+			FString CleanFileName = FPaths::GetCleanFilename(ChoppedFileName);
+			if(ChoppedFileName.Compare(CleanFileName) != 0)
+			{
+				FileName.Empty();
+			}
+		}
+	}
+	// Remove empty strings
+	InFileNames.RemoveAll([](const FString& FileName) { return FileName.IsEmpty(); });
+}
+
 /** Run a 'git ls-files' command to get all files tracked by Git recursively in a directory.
  *
  * Called in case of a "directory status" (no file listed in the command) when using the "Submit to Revision Control" menu.
@@ -847,6 +925,21 @@ static bool ListFilesInDirectoryRecurse(const FString& InPathToGitBinary, const 
 	return bResult;
 }
 
+	/** Run a 'git ls-files' command to get all files tracked by Git in a directory.
+ *
+ * Called in case of a "directory status" (no file listed in the command) when using the "Submit to Revision Control" menu.
+*/
+static bool ListFilesInDirectory(const FString& InPathToGitBinary, const FString& InRepositoryRoot, const FString& InDirectory, TArray<FString>& OutFiles)
+{
+	TArray<FString> ErrorMessages;
+	TArray<FString> Directory;
+	Directory.Add(InDirectory);
+	const bool bResult = RunCommandInternal(TEXT("ls-files"), InPathToGitBinary, InRepositoryRoot, TArray<FString>(), Directory, OutFiles, ErrorMessages);
+	AbsoluteFilenames(InRepositoryRoot, OutFiles);
+	FilterOnlyInSameDirectory(InDirectory, OutFiles);
+	return bResult;
+}
+	
 /** Parse the array of strings results of a 'git status' command for a provided list of files all in a common directory
  *
  * Called in case of a normal refresh of status on a list of assets in a the Content Browser (or user selected "Refresh" context menu).
@@ -954,17 +1047,8 @@ static void ParseStatusResults(const FString& InPathToGitBinary, const FString& 
 {
 	if(1 == InFiles.Num() && FPaths::DirectoryExists(InFiles[0]))
 	{
-		// 1) Special case for "status" of a directory: requires to get the list of files by ourselves.
-		//   (this is triggered by the "Submit to Revision Control" menu)
-		TArray<FString> Files;
-		const FString& Directory = InFiles[0];
-		if(const bool bResult = ListFilesInDirectoryRecurse(InPathToGitBinary, InRepositoryRoot, Directory, Files))
-		{
-			ParseFileStatusResult(InPathToGitBinary, InPathToGitalongBinary, InRepositoryRoot, Files, InResults, InGitalongResults, OutStates);
-		}
-		// The above cannot detect deleted assets since there is no file left to enumerate (either by the Content Browser or by git ls-files)
-		// => so we also parse the status results to explicitly look for Deleted/Missing assets
-		ParseDirectoryStatusResult(InPathToGitBinary, InRepositoryRoot, InResults, OutStates);
+		// Skip folders
+		return;
 	}
 	else
 	{
@@ -1021,13 +1105,32 @@ bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InPathToGi
 			OnePath.Add(Path);
 		}
 		TArray<FString> ErrorMessages;
+		if(FPaths::DirectoryExists(OnePath[0]))
+		{
+			// 1) Special case for "status" of a directory: requires to get the list of files by ourselves.
+			//   (this is triggered by the "Submit to Revision Control" menu)
+			TArray<FString> DirectoryFiles;
+			const FString& Directory = OnePath[0];
+			if(const bool bResult = ListFilesInDirectory(InPathToGitBinary, InRepositoryRoot, Directory, DirectoryFiles))
+			{
+				TArray<FString> GitalongErrorMessages;
+				RunCommand(TEXT("status"), InPathToGitalongBinary, InRepositoryRoot, GitalongParameters, DirectoryFiles, GitalongResults, GitalongErrorMessages);
+				ParseStatusResults(InPathToGitBinary, InPathToGitalongBinary, InRepositoryRoot, DirectoryFiles, Results, GitalongResults, OutStates);
+				continue;
+			}
+			// The above cannot detect deleted assets since there is no file left to enumerate (either by the Content Browser or by git ls-files)
+			// => so we also parse the status results to explicitly look for Deleted/Missing assets
+			ParseDirectoryStatusResult(InPathToGitBinary, InRepositoryRoot, Results, OutStates);
+			continue;
+		}
+		
 		const bool bResult = RunCommand(TEXT("status"), InPathToGitBinary, InRepositoryRoot, Parameters, OnePath, Results, ErrorMessages);
 		OutErrorMessages.Append(ErrorMessages);
 		if(bResult)
 		{
 			TArray<FString> GitalongErrorMessages;
-			RunCommand(TEXT("status"), InPathToGitalongBinary, InRepositoryRoot, GitalongParameters, InFiles, GitalongResults, GitalongErrorMessages);
-			ParseStatusResults(InPathToGitBinary, InPathToGitalongBinary, InRepositoryRoot, Files.Value, Results, GitalongResults, OutStates);
+			RunCommand(TEXT("status"), InPathToGitalongBinary, InRepositoryRoot, GitalongParameters, OnePath, GitalongResults, GitalongErrorMessages);
+			ParseStatusResults(InPathToGitBinary, InPathToGitalongBinary, InRepositoryRoot, OnePath, Results, GitalongResults, OutStates);
 		}
 	}
 
