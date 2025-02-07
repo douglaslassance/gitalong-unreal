@@ -125,12 +125,12 @@ FText FGitSourceControlState::GetDisplayName() const
 		return LOCTEXT("Unknown", "Unknown");
 	case EWorkingCopyState::Added:
 		return LOCTEXT("Added", "Added");
-	case EWorkingCopyState::Deleted:
-		return LOCTEXT("Deleted", "Deleted");
-	case EWorkingCopyState::Modified:
-		return LOCTEXT("Modified", "Modified");
-	case EWorkingCopyState::Renamed:
-		return LOCTEXT("Renamed", "Renamed");
+	// case EWorkingCopyState::Deleted:
+	// 	return LOCTEXT("Deleted", "Deleted");
+	// case EWorkingCopyState::Modified:
+	// 	return LOCTEXT("Modified", "Modified");
+	// case EWorkingCopyState::Renamed:
+	// 	return LOCTEXT("Renamed", "Renamed");
 	case EWorkingCopyState::Copied:
 		return LOCTEXT("Copied", "Copied");
 	case EWorkingCopyState::Conflicted:
@@ -168,12 +168,12 @@ FText FGitSourceControlState::GetDisplayName() const
 			return FText::Format(LOCTEXT("CheckedOutInOtherBranch", "Missing commit {0} by {1} in {2} branch"), FText::FromString(LastCommitSha.Left(5)), FText::FromString(LastCommitAuthor), FText::FromString(Branch));
 		}
 		if (IsCheckedOutInOtherBranch())
-		{	
+		{
 			FString Branch;
-			if (LastCommitRemoteBranches.Num()) 
+			if (LastCommitRemoteBranches.Num())
 			{
 				Branch = LastCommitRemoteBranches[0];
-			} else if (LastCommitLocalBranches.Num()) 
+			} else if (LastCommitLocalBranches.Num())
 			{
 				Branch = LastCommitLocalBranches[0];
 			}
@@ -193,12 +193,12 @@ FText FGitSourceControlState::GetDisplayTooltip() const
 	{
 	case EWorkingCopyState::Added:
 		return LOCTEXT("Added_Tooltip", "Item is scheduled for addition");
-	case EWorkingCopyState::Deleted:
-		return LOCTEXT("Deleted_Tooltip", "Item is scheduled for deletion");
-	case EWorkingCopyState::Modified:
-		return LOCTEXT("Modified_Tooltip", "Item has been modified");
-	case EWorkingCopyState::Renamed:
-		return LOCTEXT("Renamed_Tooltip", "Item has been renamed");
+	// case EWorkingCopyState::Deleted:
+	// 	return LOCTEXT("Deleted_Tooltip", "Item is scheduled for deletion");
+	// case EWorkingCopyState::Modified:
+	// 	return LOCTEXT("Modified_Tooltip", "Item has been modified");
+	// case EWorkingCopyState::Renamed:
+	// 	return LOCTEXT("Renamed_Tooltip", "Item has been renamed");
 	case EWorkingCopyState::Copied:
 		return LOCTEXT("Copied_Tooltip", "Item has been copied");
 	case EWorkingCopyState::Conflicted:
@@ -283,7 +283,7 @@ bool FGitSourceControlState::CanCheckout() const
 
 bool FGitSourceControlState::IsCheckedOut() const
 {
-	return IsSourceControlled();
+	return IsTruelyCheckedOut();
 }
 
 bool FGitSourceControlState::IsTruelyCheckedOut() const

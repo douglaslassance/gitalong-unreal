@@ -161,16 +161,16 @@ void FGitSourceControlProvider::Close()
 
 void FGitSourceControlProvider::OnPackageSavedWithContext(const FString& PackageFileName, UPackage* Package, FObjectPostSaveContext ObjectSaveContext)
 {
-	TArray<FString> InResults;
-	TArray<FString> InErrorMessages;
-	TArray<FString> InFiles;
-	
-	const FString FullPath = FPaths::ConvertRelativePathToFull(PackageFileName);
-	InFiles.Add(FullPath);
-	
-	GitSourceControlUtils::RunCommand(TEXT("update"), GitSourceControlUtils::FindGitalongBinaryPath(), FullPath, TArray<FString>(), TArray<FString>(), InFiles, InResults);
-
-	UE_LOG(LogSourceControl, Log, TEXT("Package Saved Event"));
+	// TArray<FString> InResults;
+	// TArray<FString> InErrorMessages;
+	// TArray<FString> InFiles;
+	//
+	// const FString FullPath = FPaths::ConvertRelativePathToFull(PackageFileName);
+	// InFiles.Add(FullPath);
+	//
+	// GitSourceControlUtils::RunCommand(TEXT("update"), GitSourceControlUtils::FindGitalongBinaryPath(), FullPath, TArray<FString>(), TArray<FString>(), InFiles, InResults);
+	//
+	// UE_LOG(LogSourceControl, Log, TEXT("Package Saved Event"));
 }
 
 TSharedRef<FGitSourceControlState, ESPMode::ThreadSafe> FGitSourceControlProvider::GetStateInternal(const FString& Filename)
