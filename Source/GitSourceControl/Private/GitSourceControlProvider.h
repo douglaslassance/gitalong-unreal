@@ -213,10 +213,4 @@ private:
 
 	/** Gitalong version for feature checking */
 	FGitVersion GitalongVersion;
-
-	void OnPackageSavedWithContext(const FString& PackageFileName, UPackage* Package,
-	FObjectPostSaveContext ObjectSaveContext);
-	
-	/** The handle for running a Gitalong update after assets are saved. */
-	FDelegateHandle OnPackageSavedWithContextEventHandle;
 };

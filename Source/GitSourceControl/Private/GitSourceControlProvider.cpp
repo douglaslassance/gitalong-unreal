@@ -44,17 +44,9 @@ void FGitSourceControlProvider::Init(bool bForceConnection)
 
 	if(bGitalongAvailable)
 	{
-		// Bind Gitalong update to save event
-		if (!UPackage::PackageSavedWithContextEvent.IsBoundToObject(this))
-		{
-			UE_LOG(LogSourceControl, Log, TEXT("Binding FGitSourceControlProvider::HandleOnPackageSaveEvent to PackageSavedEvent"));
-			OnPackageSavedWithContextEventHandle = UPackage::PackageSavedWithContextEvent.AddRaw(this, &FGitSourceControlProvider::OnPackageSavedWithContext);
-		}
-		
 		TArray<FString> InResults;
 		TArray<FString> InFiles;
 		GitSourceControlUtils::RunCommand(TEXT("update"), GitSourceControlUtils::FindGitalongBinaryPath(), FPaths::GetProjectFilePath(), TArray<FString>(), TArray<FString>(), InFiles, InResults);
-
 	}
 }
 
@@ -153,24 +145,6 @@ void FGitSourceControlProvider::Close()
 	bGitRepositoryFound = false;
 	UserName.Empty();
 	UserEmail.Empty();
-
-	// Unbind Gitalong update from save event
-	UE_LOG(LogSourceControl, Log, TEXT("Unbinding FGitSourceControlProvider::HandleOnPackageSaveEvent to PackageSavedEvent"));
-	UPackage::PackageSavedWithContextEvent.Remove(OnPackageSavedWithContextEventHandle);
-}
-
-void FGitSourceControlProvider::OnPackageSavedWithContext(const FString& PackageFileName, UPackage* Package, FObjectPostSaveContext ObjectSaveContext)
-{
-	// TArray<FString> InResults;
-	// TArray<FString> InErrorMessages;
-	// TArray<FString> InFiles;
-	//
-	// const FString FullPath = FPaths::ConvertRelativePathToFull(PackageFileName);
-	// InFiles.Add(FullPath);
-	//
-	// GitSourceControlUtils::RunCommand(TEXT("update"), GitSourceControlUtils::FindGitalongBinaryPath(), FullPath, TArray<FString>(), TArray<FString>(), InFiles, InResults);
-	//
-	// UE_LOG(LogSourceControl, Log, TEXT("Package Saved Event"));
 }
 
 TSharedRef<FGitSourceControlState, ESPMode::ThreadSafe> FGitSourceControlProvider::GetStateInternal(const FString& Filename)
