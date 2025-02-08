@@ -262,7 +262,7 @@ bool FGitSourceControlState::CanCheckIn() const
 
 bool FGitSourceControlState::CanCheckout() const
 {
-	return false;
+	return true;
 }
 
 bool FGitSourceControlState::IsCheckedOut() const
