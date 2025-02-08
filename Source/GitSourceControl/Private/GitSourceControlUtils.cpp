@@ -1465,8 +1465,8 @@ bool UpdateCachedStates(const TArray<FGitSourceControlState>& InStates)
 			// State->TimeStamp = InState.TimeStamp;
 			State->LastCommitSpread = InState.LastCommitSpread;
 			State->LastCommitSha =  InState.LastCommitSha;
+			State->LastCommitLocalBranches = InState.LastCommitLocalBranches;
 			State->LastCommitRemoteBranches = InState.LastCommitRemoteBranches;
-			State->LastCommitLocalBranches = InState.LastCommitRemoteBranches;
 			State->LastCommitHost = InState.LastCommitHost;
 			State->LastCommitAuthor = InState.LastCommitAuthor;
 			NbStatesUpdated++;

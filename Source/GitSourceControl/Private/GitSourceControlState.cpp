@@ -157,14 +157,6 @@ FText FGitSourceControlState::GetDisplayName() const
 			{
 				return LOCTEXT("CheckedOutOther", "Changed by Other");
 			}
-			FString Branch;
-			if (LastCommitRemoteBranches.Num())
-			{
-				Branch = LastCommitRemoteBranches[0];
-			} else if (LastCommitLocalBranches.Num())
-			{
-				Branch = LastCommitLocalBranches[0];
-			}
 			return LOCTEXT("CheckedOutInOtherBranch", "Changed in Other Branch");
 		}
 		if (IsCheckedOutInOtherBranch())
