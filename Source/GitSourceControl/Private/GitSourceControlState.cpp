@@ -279,9 +279,7 @@ bool FGitSourceControlState::IsTruelyCheckedOut() const
 	{
 		return true;
 	}
-	const bool LocalActiveBranch = (LastCommitSpread & ECommitSpread::LocalActiveBranch) == ECommitSpread::LocalActiveBranch;
-	const bool RemoteMatchingBranch = (LastCommitSpread & ECommitSpread::RemoteMatchingBranch) ==  ECommitSpread::RemoteMatchingBranch;
-	if (LocalActiveBranch && !RemoteMatchingBranch)
+	if (LastCommitSpread == ECommitSpread::LocalActiveBranch)
 	{
 		return true;
 	}
