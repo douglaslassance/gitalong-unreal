@@ -175,7 +175,7 @@ bool FGitDeleteWorker::Execute(FGitSourceControlCommand& InCommand)
 	// @todo Check if Gitalong preferences are set to not track uncommitted files in which case this not necessary.
 	if (InCommand.bCommandSuccessful)
 	{
-		InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("update"), InCommand.PathToGitalongBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), InCommand.Files, InCommand.InfoMessages, InCommand.ErrorMessages);
+		InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("sync"), InCommand.PathToGitalongBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), InCommand.Files, InCommand.InfoMessages, InCommand.ErrorMessages);
 	}
 	
 	// now update the status of our files
@@ -252,7 +252,7 @@ bool FGitRevertWorker::Execute(FGitSourceControlCommand& InCommand)
 	// Only doing the update on rm and reset because gitalong update will run on checkout with the post-checkout hook.
 	if (InCommand.bCommandSuccessful && (MissingFiles.Num() > 0 || AllExistingFiles.Num() > 0))
 	{
-		InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("update"), InCommand.PathToGitalongBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), TArray<FString>(), InCommand.InfoMessages, InCommand.ErrorMessages);
+		InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("sync"), InCommand.PathToGitalongBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), TArray<FString>(), InCommand.InfoMessages, InCommand.ErrorMessages);
 	}
 
 	// now update the status of our files
@@ -379,7 +379,7 @@ bool FGitCopyWorker::Execute(FGitSourceControlCommand& InCommand)
 	// @todo Check if Gitalong preferences are set to not track uncommitted files in which case this not necessary.
 	if (InCommand.bCommandSuccessful)
 	{
-		InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("update"), InCommand.PathToGitalongBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), TArray<FString>(), InCommand.InfoMessages, InCommand.ErrorMessages);
+		InCommand.bCommandSuccessful = GitSourceControlUtils::RunCommand(TEXT("sync"), InCommand.PathToGitalongBinary, InCommand.PathToRepositoryRoot, TArray<FString>(), TArray<FString>(), InCommand.InfoMessages, InCommand.ErrorMessages);
 	}
 
 	return InCommand.bCommandSuccessful;

@@ -46,7 +46,7 @@ void FGitSourceControlProvider::Init(bool bForceConnection)
 	{
 		TArray<FString> InResults;
 		TArray<FString> InFiles;
-		GitSourceControlUtils::RunCommand(TEXT("update"), GitSourceControlUtils::FindGitalongBinaryPath(), FPaths::GetProjectFilePath(), TArray<FString>(), TArray<FString>(), InFiles, InResults);
+		GitSourceControlUtils::RunCommand(TEXT("sync"), GitSourceControlUtils::FindGitalongBinaryPath(), FPaths::GetProjectFilePath(), TArray<FString>(), TArray<FString>(), InFiles, InResults);
 	}
 }
 
