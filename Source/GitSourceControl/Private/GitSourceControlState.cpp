@@ -1,4 +1,5 @@
 // Copyright (c) 2014-2022 Sebastien Rombauts (sebastien.rombauts@gmail.com)
+// Copyright (c) 2021-2026 Douglas Lassance
 //
 // Distributed under the MIT License (MIT) (See accompanying file LICENSE.txt
 // or copy at http://opensource.org/licenses/MIT)
@@ -8,6 +9,52 @@
 #include "Textures/SlateIcon.h"
 
 #define LOCTEXT_NAMESPACE "GitSourceControl.State"
+
+bool FGitalongStatus::IsClaimedByMe() const
+{
+	// Same rule Gitalong applies to make a file writable
+	return Spread == EGitalongSpread::MineUncommitted || Spread == EGitalongSpread::MineActiveBranch;
+}
+
+bool FGitalongStatus::IsBlocked() const
+{
+	// Same rule `gitalong claim` applies to refuse a claim
+	return Spread != EGitalongSpread::None && !EnumHasAnyFlags(Spread, EGitalongSpread::MineUncommitted | EGitalongSpread::MineActiveBranch);
+}
+
+bool FGitalongStatus::IsBehind() const
+{
+	return IsBlocked() && EnumHasAnyFlags(Spread, EGitalongSpread::RemoteMatchingBranch);
+}
+
+bool FGitalongStatus::IsOnOtherBranch() const
+{
+	const EGitalongSpread OtherBranch = EGitalongSpread::MineOtherBranch | EGitalongSpread::RemoteOtherBranch | EGitalongSpread::TheirOtherBranch;
+	return IsBlocked() && EnumHasAnyFlags(Spread, OtherBranch) && !EnumHasAnyFlags(Spread, ~OtherBranch);
+}
+
+FString FGitalongStatus::GetHolder() const
+{
+	FString Holder = Author.IsEmpty() ? User : Author;
+	if (!Host.IsEmpty())
+	{
+		Holder = Holder.IsEmpty() ? Host : FString::Printf(TEXT("%s (%s)"), *Holder, *Host);
+	}
+	return Holder;
+}
+
+FString FGitalongStatus::GetBranch() const
+{
+	if (RemoteBranches.Num() > 0)
+	{
+		return RemoteBranches[0];
+	}
+	if (LocalBranches.Num() > 0)
+	{
+		return LocalBranches[0];
+	}
+	return FString();
+}
 
 int32 FGitSourceControlState::GetHistorySize() const
 {
@@ -54,27 +101,21 @@ ISourceControlState::FResolveInfo FGitSourceControlState::GetResolveInfo() const
 FSlateIcon FGitSourceControlState::GetIcon() const
 {
 	const FName StyleSetName = FRevisionControlStyleManager::GetStyleSetName();
-	if (LockState == ELockState::Locked)
+	if (IsConflicted())
 	{
-		return FSlateIcon(StyleSetName, "RevisionControl.CheckedOut");
+		return FSlateIcon(StyleSetName, "RevisionControl.Conflicted");
 	}
-	else if (LockState == ELockState::LockedOther)
+	if (IsCheckedOutOther())
 	{
-		return FSlateIcon(StyleSetName, "RevisionControl.CheckedOutByOtherUser");
+		return FSlateIcon(StyleSetName, Gitalong.IsOnOtherBranch() ? "RevisionControl.CheckedOutByOtherUserOtherBranch" : "RevisionControl.CheckedOutByOtherUser");
 	}
-	else if (!IsCurrent())
+	if (!IsCurrent())
 	{
 		return FSlateIcon(StyleSetName, "RevisionControl.NotAtHeadRevision");
 	}
 
 	switch (WorkingCopyState)
 	{
-	case EWorkingCopyState::Modified:
-		if (bUsingGitLfsLocking)
-		{
-			return FSlateIcon(StyleSetName, "RevisionControl.ModifiedLocally");
-		}
-		return FSlateIcon(StyleSetName, "RevisionControl.CheckedOut");
 	case EWorkingCopyState::Added:
 		return FSlateIcon(StyleSetName, "RevisionControl.OpenForAdd");
 	case EWorkingCopyState::Renamed:
@@ -83,39 +124,44 @@ FSlateIcon FGitSourceControlState::GetIcon() const
 	case EWorkingCopyState::Deleted: // Deleted & Missing files does not show in Content Browser
 	case EWorkingCopyState::Missing:
 		return FSlateIcon(StyleSetName, "RevisionControl.MarkedForDelete");
-	case EWorkingCopyState::Conflicted:
-		return FSlateIcon(StyleSetName, "RevisionControl.Conflicted");
 	case EWorkingCopyState::NotControlled:
 		return FSlateIcon(StyleSetName, "RevisionControl.NotInDepot");
-	case EWorkingCopyState::Unknown:
-	case EWorkingCopyState::Unchanged: // Unchanged is the same as "Pristine" (not checked out) for Perforce, ie no icon
-	case EWorkingCopyState::Ignored:
+	case EWorkingCopyState::Modified:
+		return FSlateIcon(StyleSetName, "RevisionControl.CheckedOut");
 	default:
-		return FSlateIcon();
+		break;
 	}
+
+	if (bUsesCheckout && Gitalong.IsClaimedByMe())
+	{
+		return FSlateIcon(StyleSetName, "RevisionControl.CheckedOut");
+	}
+	return FSlateIcon();
 }
 
 FText FGitSourceControlState::GetDisplayName() const
 {
-	if (LockState == ELockState::Locked)
+	if (IsConflicted())
 	{
-		return LOCTEXT("Locked", "Locked For Editing");
+		return LOCTEXT("ContentsConflict", "Contents Conflict");
 	}
-	else if (LockState == ELockState::LockedOther)
+	if (IsCheckedOutOther())
 	{
-		return FText::Format(LOCTEXT("LockedOther", "Locked by "), FText::FromString(LockUser));
+		if (Gitalong.Sha.IsEmpty())
+		{
+			return FText::Format(LOCTEXT("ClaimedOther", "Claimed by {0}"), FText::FromString(Gitalong.GetHolder()));
+		}
+		return FText::Format(LOCTEXT("CommittedOther", "Changed by {0} in {1}"), FText::FromString(Gitalong.GetHolder()), FText::FromString(Gitalong.GetBranch()));
 	}
-	else if (!IsCurrent())
+	if (!IsCurrent())
 	{
-		return LOCTEXT("NotCurrent", "Not current");
+		return LOCTEXT("NotCurrent", "Not Current");
 	}
 
 	switch (WorkingCopyState)
 	{
 	case EWorkingCopyState::Unknown:
 		return LOCTEXT("Unknown", "Unknown");
-	case EWorkingCopyState::Unchanged:
-		return LOCTEXT("Unchanged", "Unchanged");
 	case EWorkingCopyState::Added:
 		return LOCTEXT("Added", "Added");
 	case EWorkingCopyState::Deleted:
@@ -126,40 +172,46 @@ FText FGitSourceControlState::GetDisplayName() const
 		return LOCTEXT("Renamed", "Renamed");
 	case EWorkingCopyState::Copied:
 		return LOCTEXT("Copied", "Copied");
-	case EWorkingCopyState::Conflicted:
-		return LOCTEXT("ContentsConflict", "Contents Conflict");
 	case EWorkingCopyState::Ignored:
 		return LOCTEXT("Ignored", "Ignored");
 	case EWorkingCopyState::NotControlled:
-		return LOCTEXT("NotControlled", "Not Under Source Control");
+		return LOCTEXT("NotControlled", "Not Under Revision Control");
 	case EWorkingCopyState::Missing:
 		return LOCTEXT("Missing", "Missing");
+	default:
+		break;
 	}
 
-	return FText();
+	if (bUsesCheckout && Gitalong.IsClaimedByMe())
+	{
+		return Gitalong.Sha.IsEmpty() ? LOCTEXT("Claimed", "Claimed") : LOCTEXT("CommittedLocally", "Committed Locally");
+	}
+	return LOCTEXT("Unchanged", "Unchanged");
 }
 
 FText FGitSourceControlState::GetDisplayTooltip() const
 {
-	if (LockState == ELockState::Locked)
+	if (IsConflicted())
 	{
-		return LOCTEXT("Locked_Tooltip", "Locked for editing by current user");
+		return LOCTEXT("ContentsConflict_Tooltip", "The contents of the item conflict with updates received from the repository.");
 	}
-	else if (LockState == ELockState::LockedOther)
+	if (IsCheckedOutOther())
 	{
-		return FText::Format(LOCTEXT("LockedOther_Tooltip", "Locked for editing by: {0}"), FText::FromString(LockUser));
+		if (Gitalong.Sha.IsEmpty())
+		{
+			return FText::Format(LOCTEXT("ClaimedOther_Tooltip", "Claimed by {0} who has uncommitted changes."), FText::FromString(Gitalong.GetHolder()));
+		}
+		return FText::Format(LOCTEXT("CommittedOther_Tooltip", "Changed by {0} in commit {1} on branch {2}, which is missing from the active branch."), FText::FromString(Gitalong.GetHolder()), FText::FromString(Gitalong.Sha.Left(8)), FText::FromString(Gitalong.GetBranch()));
 	}
-	else if (!IsCurrent())
+	if (!IsCurrent())
 	{
-		return LOCTEXT("NotCurrent_Tooltip", "The file(s) are not at the head revision");
+		return FText::Format(LOCTEXT("NotCurrent_Tooltip", "A newer version from commit {0} must be synced before editing."), FText::FromString(Gitalong.Sha.Left(8)));
 	}
 
 	switch (WorkingCopyState)
 	{
 	case EWorkingCopyState::Unknown:
-		return LOCTEXT("Unknown_Tooltip", "Unknown source control state");
-	case EWorkingCopyState::Unchanged:
-		return LOCTEXT("Pristine_Tooltip", "There are no modifications");
+		return LOCTEXT("Unknown_Tooltip", "Unknown revision control state");
 	case EWorkingCopyState::Added:
 		return LOCTEXT("Added_Tooltip", "Item is scheduled for addition");
 	case EWorkingCopyState::Deleted:
@@ -170,17 +222,25 @@ FText FGitSourceControlState::GetDisplayTooltip() const
 		return LOCTEXT("Renamed_Tooltip", "Item has been renamed");
 	case EWorkingCopyState::Copied:
 		return LOCTEXT("Copied_Tooltip", "Item has been copied");
-	case EWorkingCopyState::Conflicted:
-		return LOCTEXT("ContentsConflict_Tooltip", "The contents of the item conflict with updates received from the repository.");
 	case EWorkingCopyState::Ignored:
 		return LOCTEXT("Ignored_Tooltip", "Item is being ignored.");
 	case EWorkingCopyState::NotControlled:
 		return LOCTEXT("NotControlled_Tooltip", "Item is not under version control.");
 	case EWorkingCopyState::Missing:
 		return LOCTEXT("Missing_Tooltip", "Item is missing (e.g., you moved or deleted it without using Git). This also indicates that a directory is incomplete (a checkout or update was interrupted).");
+	default:
+		break;
 	}
 
-	return FText();
+	if (bUsesCheckout && Gitalong.IsClaimedByMe())
+	{
+		if (Gitalong.Sha.IsEmpty())
+		{
+			return LOCTEXT("Claimed_Tooltip", "Claimed for editing by this clone");
+		}
+		return FText::Format(LOCTEXT("CommittedLocally_Tooltip", "Changed in local commit {0} that is not pushed yet"), FText::FromString(Gitalong.Sha.Left(8)));
+	}
+	return LOCTEXT("Pristine_Tooltip", "There are no modifications");
 }
 
 const FString& FGitSourceControlState::GetFilename() const
@@ -193,60 +253,57 @@ const FDateTime& FGitSourceControlState::GetTimeStamp() const
 	return TimeStamp;
 }
 
+bool FGitSourceControlState::HasLocalChanges() const
+{
+	return WorkingCopyState == EWorkingCopyState::Added
+		|| WorkingCopyState == EWorkingCopyState::Deleted
+		|| WorkingCopyState == EWorkingCopyState::Missing
+		|| WorkingCopyState == EWorkingCopyState::Modified
+		|| WorkingCopyState == EWorkingCopyState::Renamed;
+}
+
 // Deleted and Missing assets cannot appear in the Content Browser, but the do in the Submit files to Source Control window!
 bool FGitSourceControlState::CanCheckIn() const
 {
-	if (bUsingGitLfsLocking)
-	{
-		return (((LockState == ELockState::Locked) && !IsConflicted()) || (WorkingCopyState == EWorkingCopyState::Added)) && IsCurrent();
-	}
-	else
-	{
-		return (WorkingCopyState == EWorkingCopyState::Added
-			|| WorkingCopyState == EWorkingCopyState::Deleted
-			|| WorkingCopyState == EWorkingCopyState::Missing
-			|| WorkingCopyState == EWorkingCopyState::Modified
-			|| WorkingCopyState == EWorkingCopyState::Renamed) && IsCurrent();
-	}
+	return HasLocalChanges() && IsCurrent() && !IsCheckedOutOther();
 }
 
 bool FGitSourceControlState::CanCheckout() const
 {
-	if (bUsingGitLfsLocking)
+	if (!bUsesCheckout)
 	{
-		// We don't want to allow checkout if the file is out-of-date, as modifying an out-of-date binary file will most likely result in a merge conflict
-		return (WorkingCopyState == EWorkingCopyState::Unchanged || WorkingCopyState == EWorkingCopyState::Modified) && LockState == ELockState::NotLocked && IsCurrent();
+		return false; // Without shared claims, all tracked files in the working copy are always already checked-out
 	}
-	else
-	{
-		return false; // With Git all tracked files in the working copy are always already checked-out (as opposed to Perforce)
-	}
+	return IsSourceControlled() && !IsAdded() && !IsCheckedOut() && !Gitalong.IsBlocked();
 }
 
 bool FGitSourceControlState::IsCheckedOut() const
 {
-	if (bUsingGitLfsLocking)
+	if (!bUsesCheckout)
 	{
-		return LockState == ELockState::Locked;
+		return IsSourceControlled(); // Without shared claims, all tracked files in the working copy are always checked-out
 	}
-	else
-	{
-		return IsSourceControlled(); // With Git all tracked files in the working copy are always checked-out (as opposed to Perforce)
-	}
+	// Files changed outside of the editor count too, Gitalong publishes them on its next update
+	return Gitalong.IsClaimedByMe()
+		|| WorkingCopyState == EWorkingCopyState::Modified
+		|| WorkingCopyState == EWorkingCopyState::Renamed
+		|| WorkingCopyState == EWorkingCopyState::Copied
+		|| WorkingCopyState == EWorkingCopyState::Conflicted;
 }
 
 bool FGitSourceControlState::IsCheckedOutOther(FString* Who) const
 {
-	if (Who != NULL)
+	const bool bCheckedOutOther = Gitalong.IsBlocked() && !Gitalong.IsBehind();
+	if (bCheckedOutOther && Who != nullptr)
 	{
-		*Who = LockUser;
+		*Who = Gitalong.GetHolder();
 	}
-	return LockState == ELockState::LockedOther;
+	return bCheckedOutOther;
 }
 
 bool FGitSourceControlState::IsCurrent() const
 {
-	return !bNewerVersionOnServer;
+	return !Gitalong.IsBehind();
 }
 
 bool FGitSourceControlState::IsSourceControlled() const
@@ -271,7 +328,7 @@ bool FGitSourceControlState::IsIgnored() const
 
 bool FGitSourceControlState::CanEdit() const
 {
-	return IsCurrent(); // With Git all files in the working copy are always editable (as opposed to Perforce)
+	return IsCurrent() && !IsCheckedOutOther();
 }
 
 bool FGitSourceControlState::CanDelete() const
@@ -320,7 +377,8 @@ bool FGitSourceControlState::IsConflicted() const
 
 bool FGitSourceControlState::CanRevert() const
 {
-	return CanCheckIn();
+	// Reverting an unmodified claim releases it
+	return IsModified() || (bUsesCheckout && Gitalong.Spread == EGitalongSpread::MineUncommitted);
 }
 
 TSharedPtr<ISourceControlRevision, ESPMode::ThreadSafe> FGitSourceControlState::GetCurrentRevision() const

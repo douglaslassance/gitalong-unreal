@@ -1,4 +1,5 @@
 // Copyright (c) 2014-2022 Sebastien Rombauts (sebastien.rombauts@gmail.com)
+// Copyright (c) 2021-2026 Douglas Lassance
 //
 // Distributed under the MIT License (MIT) (See accompanying file LICENSE.txt
 // or copy at http://opensource.org/licenses/MIT)
@@ -23,7 +24,7 @@
 
 #define LOCTEXT_NAMESPACE "GitSourceControl"
 
-static FName ProviderName("Git LFS 2");
+static FName ProviderName("Gitalong");
 
 void FGitSourceControlProvider::Init(bool bForceConnection)
 {
@@ -33,13 +34,14 @@ void FGitSourceControlProvider::Init(bool bForceConnection)
 		const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("GitSourceControl"));
 		if (Plugin.IsValid())
 		{
-			UE_LOG(LogSourceControl, Log, TEXT("Git plugin '%s'"), *(Plugin->GetDescriptor().VersionName));
+			UE_LOG(LogSourceControl, Log, TEXT("Gitalong plugin '%s'"), *(Plugin->GetDescriptor().VersionName));
 		}
 
 		CheckGitAvailability();
-
-		const FGitSourceControlModule& GitSourceControl = FModuleManager::GetModuleChecked<FGitSourceControlModule>("GitSourceControl");
-		bUsingGitLfsLocking = GitSourceControl.AccessSettings().IsUsingGitLfsLocking();
+	}
+	if (!bGitalongAvailable)
+	{
+		CheckGitalongAvailability();
 	}
 
 	// bForceConnection: not used anymore
@@ -65,6 +67,9 @@ void FGitSourceControlProvider::CheckGitAvailability()
 		bGitAvailable = GitSourceControlUtils::CheckGitAvailability(PathToGitBinary, &GitVersion);
 		if (bGitAvailable)
 		{
+			GitSourceControlUtils::AddBinaryDirectoryToPath(PathToGitBinary);
+			// The editor has no terminal to answer credential prompts, fail instead of hanging
+			FPlatformMisc::SetEnvironmentVar(TEXT("GIT_TERMINAL_PROMPT"), TEXT("0"));
 			CheckRepositoryStatus(PathToGitBinary);
 
 			// Register Console Commands (even without a workspace)
@@ -74,6 +79,46 @@ void FGitSourceControlProvider::CheckGitAvailability()
 	else
 	{
 		bGitAvailable = false;
+	}
+}
+
+void FGitSourceControlProvider::CheckGitalongAvailability()
+{
+	FGitSourceControlModule& GitSourceControl = FModuleManager::GetModuleChecked<FGitSourceControlModule>("GitSourceControl");
+	FString PathToGitalongBinary = GitSourceControl.AccessSettings().GetGitalongBinaryPath();
+	GitalongVersion.Empty();
+	bGitalongAvailable = !PathToGitalongBinary.IsEmpty() && GitSourceControlUtils::CheckGitalongAvailability(PathToGitalongBinary, &GitalongVersion);
+	if (!bGitalongAvailable)
+	{
+		// Try to find Gitalong binary, and update settings accordingly (the configured one can be an unsupported 0.x release)
+		const FString FoundPathToGitalongBinary = GitSourceControlUtils::FindGitalongBinaryPath();
+		if (!FoundPathToGitalongBinary.IsEmpty())
+		{
+			PathToGitalongBinary = FoundPathToGitalongBinary;
+			GitSourceControl.AccessSettings().SetGitalongBinaryPath(PathToGitalongBinary);
+			bGitalongAvailable = GitSourceControlUtils::CheckGitalongAvailability(PathToGitalongBinary, &GitalongVersion);
+		}
+	}
+
+	if (bGitalongAvailable)
+	{
+		UE_LOG(LogSourceControl, Log, TEXT("Using '%s' (Gitalong %s)"), *PathToGitalongBinary, *GitalongVersion);
+		// Git hooks installed by "gitalong setup" look for gitalong on the PATH
+		GitSourceControlUtils::AddBinaryDirectoryToPath(PathToGitalongBinary);
+
+		FGitalongConfig Config;
+		if (bGitRepositoryFound && GitSourceControlUtils::GetGitalongConfig(PathToGitalongBinary, PathToRepositoryRoot, Config))
+		{
+			SetGitalongConfig(Config);
+		}
+		else if (bGitRepositoryFound)
+		{
+			UE_LOG(LogSourceControl, Warning, TEXT("'%s' is not set up for Gitalong, run 'gitalong setup' to share changes with your team"), *PathToRepositoryRoot);
+		}
+	}
+	else
+	{
+		UE_LOG(LogSourceControl, Warning, TEXT("Gitalong 1.1 or later not found, install it or set its path in the revision control settings"));
 	}
 }
 
@@ -117,6 +162,8 @@ void FGitSourceControlProvider::Close()
 
 	bGitAvailable = false;
 	bGitRepositoryFound = false;
+	bGitalongAvailable = false;
+	GitalongConfig = FGitalongConfig();
 	UserName.Empty();
 	UserEmail.Empty();
 }
@@ -132,7 +179,7 @@ TSharedRef<FGitSourceControlState, ESPMode::ThreadSafe> FGitSourceControlProvide
 	else
 	{
 		// cache an unknown state for this item
-		TSharedRef<FGitSourceControlState, ESPMode::ThreadSafe> NewState = MakeShareable(new FGitSourceControlState(Filename, bUsingGitLfsLocking));
+		TSharedRef<FGitSourceControlState, ESPMode::ThreadSafe> NewState = MakeShareable(new FGitSourceControlState(Filename, UsesCheckout()));
 		StateCache.Add(Filename, NewState);
 		return NewState;
 	}
@@ -148,8 +195,9 @@ FText FGitSourceControlProvider::GetStatusText() const
 	Args.Add(TEXT("BranchName"), FText::FromString(BranchName));
 	Args.Add(TEXT("CommitId"), FText::FromString(CommitId.Left(8)));
 	Args.Add(TEXT("CommitSummary"), FText::FromString(CommitSummary));
+	Args.Add(TEXT("GitalongVersion"), FText::FromString(GitalongVersion));
 
-	return FText::Format(NSLOCTEXT("Status", "Provider: Git\nEnabledLabel", "Local repository: {RepositoryName}\nRemote origin: {RemoteUrl}\nUser: {UserName}\nE-mail: {UserEmail}\n[{BranchName} {CommitId}] {CommitSummary}"), Args);
+	return FText::Format(NSLOCTEXT("Status", "Provider: Gitalong\nEnabledLabel", "Local repository: {RepositoryName}\nRemote origin: {RemoteUrl}\nUser: {UserName}\nE-mail: {UserEmail}\nGitalong: {GitalongVersion}\n[{BranchName} {CommitId}] {CommitSummary}"), Args);
 }
 
 TMap<ISourceControlProvider::EStatus, FString> FGitSourceControlProvider::GetStatus() const
@@ -162,6 +210,12 @@ TMap<ISourceControlProvider::EStatus, FString> FGitSourceControlProvider::GetSta
 	Result.Add(EStatus::Remote, RemoteUrl);
 	Result.Add(EStatus::Branch, BranchName);
 	Result.Add(EStatus::Email, UserEmail);
+	Result.Add(EStatus::ScmVersion, FString::Printf(TEXT("Git %d.%d.%d, Gitalong %s"), GitVersion.Major, GitVersion.Minor, GitVersion.Patch, *GitalongVersion));
+	const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("GitSourceControl"));
+	if (Plugin.IsValid())
+	{
+		Result.Add(EStatus::PluginVersion, Plugin->GetDescriptor().VersionName);
+	}
 	return Result;
 }
 
@@ -312,7 +366,7 @@ void FGitSourceControlProvider::CancelOperation(const FSourceControlOperationRef
 
 bool FGitSourceControlProvider::UsesLocalReadOnlyState() const
 {
-	return bUsingGitLfsLocking; // Git LFS Lock uses read-only state
+	return GitalongConfig.bModifyPermissions; // Gitalong keeps files read-only until claimed
 }
 
 bool FGitSourceControlProvider::UsesChangelists() const
@@ -322,7 +376,7 @@ bool FGitSourceControlProvider::UsesChangelists() const
 
 bool FGitSourceControlProvider::UsesCheckout() const
 {
-	return bUsingGitLfsLocking; // Git LFS Lock uses read-only state
+	return GitalongConfig.bTrackUncommitted; // Claims are only shared with the team when Gitalong tracks uncommitted changes
 }
 
 /** Whether the provider uses individual file revisions. Used to enable partial 'Sync' operations on Content Browser Folders. */
@@ -394,11 +448,25 @@ void FGitSourceControlProvider::OutputCommandMessages(const FGitSourceControlCom
 
 void FGitSourceControlProvider::UpdateRepositoryStatus(const class FGitSourceControlCommand& InCommand)
 {
+	if (InCommand.GitalongConfig.IsSet())
+	{
+		SetGitalongConfig(InCommand.GitalongConfig.GetValue());
+	}
+
 	// For all operations running UpdateStatus, get Commit informations:
 	if (!InCommand.CommitId.IsEmpty())
 	{
 		CommitId = InCommand.CommitId;
 		CommitSummary = InCommand.CommitSummary;
+	}
+}
+
+void FGitSourceControlProvider::SetGitalongConfig(const FGitalongConfig& InConfig)
+{
+	GitalongConfig = InConfig;
+	for (const auto& CacheItem : StateCache)
+	{
+		CacheItem.Value->bUsesCheckout = UsesCheckout();
 	}
 }
 

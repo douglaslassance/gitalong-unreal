@@ -1,4 +1,5 @@
 // Copyright (c) 2014-2022 Sebastien Rombauts (sebastien.rombauts@gmail.com)
+// Copyright (c) 2021-2026 Douglas Lassance
 //
 // Distributed under the MIT License (MIT) (See accompanying file LICENSE.txt
 // or copy at http://opensource.org/licenses/MIT)
@@ -16,23 +17,11 @@ public:
 	/** Set the Git Binary Path */
 	bool SetBinaryPath(const FString& InString);
 
-	/** Tell if using the Git LFS file Locking workflow */
-	bool IsUsingGitLfsLocking() const;
+	/** Get the Gitalong Binary Path */
+	const FString GetGitalongBinaryPath() const;
 
-	/** Configure the usage of Git LFS file Locking workflow */
-	bool SetUsingGitLfsLocking(const bool InUsingGitLfsLocking);
-
-	/** Get the username used by the Git LFS 2 File Locks server */
-	const FString GetLfsUserName() const;
-
-	/** Set the username used by the Git LFS 2 File Locks server */
-	bool SetLfsUserName(const FString& InString);
-
-	/** Set whether Submit means Commit AND push (default true) */
-	bool SetIsPushAfterCommitEnabled(bool bCond);
-
-	/** Get whether Submit means Commit AND push (default true) */
-	bool IsPushAfterCommitEnabled() const;
+	/** Set the Gitalong Binary Path */
+	bool SetGitalongBinaryPath(const FString& InString);
 
 	/** Load settings from ini file */
 	void LoadSettings();
@@ -47,12 +36,6 @@ private:
 	/** Git binary path */
 	FString BinaryPath;
 
-	/** Tells if using the Git LFS file Locking workflow */
-	bool bUsingGitLfsLocking;
-
-	/** Username used by the Git LFS 2 File Locks server */
-	FString LfsUserName;
-
-	/** Does Submit mean Commit AND push */
-	bool bIsPushAfterCommitEnabled = true;
+	/** Gitalong binary path */
+	FString GitalongBinaryPath;
 };

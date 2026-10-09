@@ -1,4 +1,5 @@
 // Copyright (c) 2014-2022 Sebastien Rombauts (sebastien.rombauts@gmail.com)
+// Copyright (c) 2021-2026 Douglas Lassance
 //
 // Distributed under the MIT License (MIT) (See accompanying file LICENSE.txt
 // or copy at http://opensource.org/licenses/MIT)
@@ -36,6 +37,10 @@ private:
 	FString GetBinaryPathString() const;
 	void OnBinaryPathPicked(const FString & PickedPath) const;
 
+	/** Delegates to get Gitalong binary path from/to settings */
+	FString GetGitalongBinaryPathString() const;
+	void OnGitalongBinaryPathPicked(const FString & PickedPath) const;
+
 	/** Delegate to get repository root, user name and email from provider */
 	FText GetPathToRepositoryRoot() const;
 	FText GetUserName() const;
@@ -44,7 +49,6 @@ private:
 	EVisibility MustInitializeGitRepository() const;
 	bool CanInitializeGitRepository() const;
 	bool CanInitializeGitLfs() const;
-	bool CanUseGitLfsLocking() const;
 
 	/** Delegate to initialize a new Git repository */
 	FReply OnClickedInitializeGitRepository();
@@ -62,17 +66,6 @@ private:
 
 	void OnCheckedCreateGitAttributes(ECheckBoxState NewCheckedState);
 	bool bAutoCreateGitAttributes;
-
-	void OnCheckedUseGitLfsLocking(ECheckBoxState NewCheckedState);
-	ECheckBoxState IsUsingGitLfsLocking() const;
-	bool GetIsUsingGitLfsLocking() const;
-	
-	void OnIsPushAfterCommitEnabled(ECheckBoxState NewCheckedState);
-	bool GetIsPushAfterCommitEnabled() const;
-	ECheckBoxState IsPushAfterCommitEnabled() const;
-
-	void OnLfsUserNameCommited(const FText& InText, ETextCommit::Type InCommitType);
-	FText GetLfsUserName() const;
 
 	void OnCheckedInitialCommit(ECheckBoxState NewCheckedState);
 	bool GetAutoInitialCommit() const;

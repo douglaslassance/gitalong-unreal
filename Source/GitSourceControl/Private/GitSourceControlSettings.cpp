@@ -1,4 +1,5 @@
 // Copyright (c) 2014-2022 Sebastien Rombauts (sebastien.rombauts@gmail.com)
+// Copyright (c) 2021-2026 Douglas Lassance
 //
 // Distributed under the MIT License (MIT) (See accompanying file LICENSE.txt
 // or copy at http://opensource.org/licenses/MIT)
@@ -37,54 +38,21 @@ bool FGitSourceControlSettings::SetBinaryPath(const FString& InString)
 	return bChanged;
 }
 
-/** Tell if using the Git LFS file Locking workflow */
-bool FGitSourceControlSettings::IsUsingGitLfsLocking() const
+const FString FGitSourceControlSettings::GetGitalongBinaryPath() const
 {
 	FScopeLock ScopeLock(&CriticalSection);
-	return bUsingGitLfsLocking;
+	return GitalongBinaryPath; // Return a copy to be thread-safe
 }
 
-/** Configure the usage of Git LFS file Locking workflow */
-bool FGitSourceControlSettings::SetUsingGitLfsLocking(const bool InUsingGitLfsLocking)
+bool FGitSourceControlSettings::SetGitalongBinaryPath(const FString& InString)
 {
 	FScopeLock ScopeLock(&CriticalSection);
-	const bool bChanged = (bUsingGitLfsLocking != InUsingGitLfsLocking);
-	bUsingGitLfsLocking = InUsingGitLfsLocking;
-	return bChanged;
-}
-
-const FString FGitSourceControlSettings::GetLfsUserName() const
-{
-	FScopeLock ScopeLock(&CriticalSection);
-	return LfsUserName; // Return a copy to be thread-safe
-}
-
-bool FGitSourceControlSettings::SetLfsUserName(const FString& InString)
-{
-	FScopeLock ScopeLock(&CriticalSection);
-	const bool bChanged = (LfsUserName != InString);
-	if (bChanged)
+	const bool bChanged = (GitalongBinaryPath != InString);
+	if(bChanged)
 	{
-		LfsUserName = InString;
+		GitalongBinaryPath = InString;
 	}
 	return bChanged;
-}
-
-bool FGitSourceControlSettings::SetIsPushAfterCommitEnabled(bool bInEnabled)
-{
-	FScopeLock ScopeLock(&CriticalSection);
-	const bool bChanged = (bIsPushAfterCommitEnabled != bInEnabled);
-	if (bChanged)
-	{
-		bIsPushAfterCommitEnabled = bInEnabled;
-	}
-	return bChanged;
-}
-
-bool FGitSourceControlSettings::IsPushAfterCommitEnabled() const
-{
-	FScopeLock ScopeLock(&CriticalSection);
-	return bIsPushAfterCommitEnabled;
 }
 
 // This is called at startup nearly before anything else in our module: BinaryPath will then be used by the provider
@@ -93,9 +61,7 @@ void FGitSourceControlSettings::LoadSettings()
 	FScopeLock ScopeLock(&CriticalSection);
 	const FString& IniFile = SourceControlHelpers::GetSettingsIni();
 	GConfig->GetString(*GitSettingsConstants::SettingsSection, TEXT("BinaryPath"), BinaryPath, IniFile);
-	GConfig->GetBool(*GitSettingsConstants::SettingsSection, TEXT("UsingGitLfsLocking"), bUsingGitLfsLocking, IniFile);
-	GConfig->GetString(*GitSettingsConstants::SettingsSection, TEXT("LfsUserName"), LfsUserName, IniFile);
-	GConfig->GetBool(*GitSettingsConstants::SettingsSection, TEXT("IsPushAfterCommitEnabled"), bIsPushAfterCommitEnabled, IniFile);
+	GConfig->GetString(*GitSettingsConstants::SettingsSection, TEXT("GitalongBinaryPath"), GitalongBinaryPath, IniFile);
 }
 
 void FGitSourceControlSettings::SaveSettings() const
@@ -103,7 +69,5 @@ void FGitSourceControlSettings::SaveSettings() const
 	FScopeLock ScopeLock(&CriticalSection);
 	const FString& IniFile = SourceControlHelpers::GetSettingsIni();
 	GConfig->SetString(*GitSettingsConstants::SettingsSection, TEXT("BinaryPath"), *BinaryPath, IniFile);
-	GConfig->SetBool(*GitSettingsConstants::SettingsSection, TEXT("UsingGitLfsLocking"), bUsingGitLfsLocking, IniFile);
-	GConfig->SetString(*GitSettingsConstants::SettingsSection, TEXT("LfsUserName"), *LfsUserName, IniFile);
-	GConfig->SetBool(*GitSettingsConstants::SettingsSection, TEXT("IsPushAfterCommitEnabled"), bIsPushAfterCommitEnabled, IniFile);
+	GConfig->SetString(*GitSettingsConstants::SettingsSection, TEXT("GitalongBinaryPath"), *GitalongBinaryPath, IniFile);
 }

@@ -1,4 +1,5 @@
 // Copyright (c) 2014-2022 Sebastien Rombauts (sebastien.rombauts@gmail.com)
+// Copyright (c) 2021-2026 Douglas Lassance
 //
 // Distributed under the MIT License (MIT) (See accompanying file LICENSE.txt
 // or copy at http://opensource.org/licenses/MIT)
@@ -39,7 +40,7 @@ public:
 	TArray<FGitSourceControlState> States;
 };
 
-/** Lock (check-out) a set of files using Git LFS 2. */
+/** Claim (check-out) a set of files using Gitalong. */
 class FGitCheckOutWorker : public IGitSourceControlWorker
 {
 public:

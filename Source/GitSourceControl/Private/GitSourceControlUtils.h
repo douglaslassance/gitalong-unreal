@@ -1,4 +1,5 @@
 // Copyright (c) 2014-2022 Sebastien Rombauts (sebastien.rombauts@gmail.com)
+// Copyright (c) 2021-2026 Douglas Lassance
 //
 // Distributed under the MIT License (MIT) (See accompanying file LICENSE.txt
 // or copy at http://opensource.org/licenses/MIT)
@@ -9,6 +10,7 @@
 #include "GitSourceControlState.h"
 
 class FGitSourceControlCommand;
+struct FGitalongConfig;
 
 /**
  * Helper struct for maintaining temporary files for passing to commands
@@ -41,6 +43,26 @@ namespace GitSourceControlUtils
  * @returns the path to the Git binary if found, or an empty string.
  */
 FString FindGitBinaryPath();
+
+/**
+ * Find the path to the Gitalong binary, looking into the usual install locations and the PATH
+ * @returns the path to the Gitalong binary if found, or an empty string.
+ */
+FString FindGitalongBinaryPath();
+
+/**
+ * Run a Gitalong "version" command to check the availability of a recent enough binary.
+ * @param InPathToGitalongBinary	The path to the Gitalong binary
+ * @param OutVersion				If provided, populate with the version string, like "1.1.0"
+ * @returns true if the command succeeded and the version is supported
+ */
+bool CheckGitalongAvailability(const FString& InPathToGitalongBinary, FString* OutVersion = nullptr);
+
+/**
+ * Add the directory of a binary to the PATH of the editor, so that child processes and Git hooks can find it.
+ * @param InPathToBinary	The path to the binary
+ */
+void AddBinaryDirectoryToPath(const FString& InPathToBinary);
 
 /**
  * Run a Git "version" command to check the availability of the binary.
@@ -132,6 +154,54 @@ bool RunCommand(const FString& InCommand, const FString& InPathToGitBinary, cons
 bool RunCommandInternalRaw(const FString& InCommand, const FString& InPathToGitBinary, const FString& InRepositoryRoot, const TArray<FString>& InParameters, const TArray<FString>& InFiles, FString& OutResults, FString& OutErrors, const int32 ExpectedReturnCode = 0);
 
 /**
+ * Read the configuration of a repository set up with "gitalong setup".
+ *
+ * @param	InPathToGitalongBinary	The path to the Gitalong binary
+ * @param	InRepositoryRoot		The Git repository from where to run the command
+ * @param	OutConfig				The configuration of the repository
+ * @returns false if the repository is not set up for Gitalong
+ */
+bool GetGitalongConfig(const FString& InPathToGitalongBinary, const FString& InRepositoryRoot, FGitalongConfig& OutConfig);
+
+/**
+ * Run a Gitalong "update" command to publish the local changes of this clone to the store.
+ *
+ * @param	InPathToGitalongBinary	The path to the Gitalong binary
+ * @param	InPathToGitBinary		The path to the Git binary
+ * @param	InRepositoryRoot		The Git repository from where to run the command
+ * @param	OutResults				The results (from StdOut) as an array per-line
+ * @param	OutErrorMessages		Any errors (from StdErr) as an array per-line
+ * @returns true if the command succeeded
+ */
+bool RunGitalongUpdate(const FString& InPathToGitalongBinary, const FString& InPathToGitBinary, const FString& InRepositoryRoot, TArray<FString>& OutResults, TArray<FString>& OutErrorMessages);
+
+/**
+ * Run a Gitalong "claim" command to check out files.
+ *
+ * @param	InPathToGitalongBinary	The path to the Gitalong binary
+ * @param	InPathToGitBinary		The path to the Git binary
+ * @param	InRepositoryRoot		The Git repository from where to run the command
+ * @param	InFiles					The absolute paths of the files to claim
+ * @param	OutBlockers				Status of the change blocking each file that could not be claimed
+ * @param	OutErrorMessages		Any errors (from StdErr) as an array per-line
+ * @returns true if the command ran, even when some files are blocked
+ */
+bool RunGitalongClaim(const FString& InPathToGitalongBinary, const FString& InPathToGitBinary, const FString& InRepositoryRoot, const TArray<FString>& InFiles, TMap<FString, FGitalongStatus>& OutBlockers, TArray<FString>& OutErrorMessages);
+
+/**
+ * Run a Gitalong "status" command to know where the latest change to each file lives across the team.
+ *
+ * @param	InPathToGitalongBinary	The path to the Gitalong binary
+ * @param	InPathToGitBinary		The path to the Git binary
+ * @param	InRepositoryRoot		The Git repository from where to run the command
+ * @param	InFiles					The absolute paths of the files to query
+ * @param	OutStatuses				Status of each file, keyed by absolute path
+ * @param	OutErrorMessages		Any errors (from StdErr) as an array per-line
+ * @returns true if the command succeeded
+ */
+bool RunGitalongStatus(const FString& InPathToGitalongBinary, const FString& InPathToGitBinary, const FString& InRepositoryRoot, const TArray<FString>& InFiles, TMap<FString, FGitalongStatus>& OutStatuses, TArray<FString>& OutErrorMessages);
+
+/**
  * Run a Git "commit" command by batches.
  *
  * @param	InPathToGitBinary	The path to the Git binary
@@ -144,16 +214,15 @@ bool RunCommandInternalRaw(const FString& InCommand, const FString& InPathToGitB
 bool RunCommit(const FString& InPathToGitBinary, const FString& InRepositoryRoot, const TArray<FString>& InParameters, const TArray<FString>& InFiles, TArray<FString>& OutResults, TArray<FString>& OutErrorMessages);
 
 /**
- * Run a Git "status" command and parse it.
+ * Run a Git "status" command and parse it, then a Gitalong "status" command for the files of interest.
  *
- * @param	InPathToGitBinary	The path to the Git binary
- * @param	InRepositoryRoot	The Git repository from where to run the command - usually the Game directory (can be empty)
- * @param	InUsingLfsLocking	Tells if using the Git LFS file Locking workflow
+ * @param	InCommand			The command providing the binaries, the repository and the checkout workflow
  * @param	InFiles				The files to be operated on
  * @param	OutErrorMessages	Any errors (from StdErr) as an array per-line
+ * @param	OutStates			States of the files
  * @returns true if the command succeeded and returned no errors
  */
-bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InRepositoryRoot, const bool InUsingLfsLocking, const TArray<FString>& InFiles, TArray<FString>& OutErrorMessages, TArray<FGitSourceControlState>& OutStates);
+bool RunUpdateStatus(const FGitSourceControlCommand& InCommand, const TArray<FString>& InFiles, TArray<FString>& OutErrorMessages, TArray<FGitSourceControlState>& OutStates);
 
 /**
  * Run a Git "cat-file" command to dump the binary content of a revision into a file.
@@ -205,17 +274,5 @@ bool UpdateCachedStates(const TArray<FGitSourceControlState>& InStates);
  * update the commands success status if all errors were removed.
  */
 void RemoveRedundantErrors(FGitSourceControlCommand& InCommand, const FString& InFilter);
-
-/**
- * Run 'git lfs locks" to extract all lock information for all files in the repository
- *
- * @param	InPathToGitBinary	The path to the Git binary
- * @param	InRepositoryRoot	The Git repository from where to run the command - usually the Game directory
- * @param   bAbsolutePaths      Whether to report absolute filenames, false for repo-relative
- * @param	OutErrorMessages    Any errors (from StdErr) as an array per-line
- * @param	OutLocks		    The lock results (file, username)
- * @returns true if the command succeeded and returned no errors
- */
-bool GetAllLocks(const FString& InPathToGitBinary, const FString& InRepositoryRoot, const bool bAbsolutePaths, TArray<FString>& OutErrorMessages, TMap<FString, FString>& OutLocks);
 
 }

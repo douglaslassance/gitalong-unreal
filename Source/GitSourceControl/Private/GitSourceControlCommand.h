@@ -1,4 +1,5 @@
 // Copyright (c) 2014-2022 Sebastien Rombauts (sebastien.rombauts@gmail.com)
+// Copyright (c) 2021-2026 Douglas Lassance
 //
 // Distributed under the MIT License (MIT) (See accompanying file LICENSE.txt
 // or copy at http://opensource.org/licenses/MIT)
@@ -8,6 +9,16 @@
 #include "CoreMinimal.h"
 #include "ISourceControlProvider.h"
 #include "Misc/IQueuedWork.h"
+
+/** Repository configuration read from Gitalong by the "Connect" operation */
+struct FGitalongConfig
+{
+	/** Uncommitted changes and claims are shared with the team, which enables the checkout workflow */
+	bool bTrackUncommitted = false;
+
+	/** Gitalong makes files read-only until they are claimed */
+	bool bModifyPermissions = false;
+};
 
 /**
  * Used to execute Git commands multi-threaded.
@@ -45,11 +56,17 @@ public:
 	/** Path to the Git binary */
 	FString PathToGitBinary;
 
+	/** Path to the Gitalong binary */
+	FString PathToGitalongBinary;
+
 	/** Path to the root of the Git repository: can be the ProjectDir itself, or any parent directory (found by the "Connect" operation) */
 	FString PathToRepositoryRoot;
 
-	/** Tell if using the Git LFS file Locking workflow */
-	bool bUsingGitLfsLocking;
+	/** Tell if files must be claimed (checked out) with Gitalong before being edited */
+	bool bUsesCheckout;
+
+	/** Gitalong configuration of the repository, only set by the "Connect" operation */
+	TOptional<FGitalongConfig> GitalongConfig;
 
 	/** Operation we want to perform - contains outward-facing parameters & results */
 	TSharedRef<class ISourceControlOperation, ESPMode::ThreadSafe> Operation;
@@ -65,9 +82,6 @@ public:
 
 	/**If true, the source control command succeeded*/
 	bool bCommandSuccessful;
-
-	/** TODO LFS If true, the source control connection was dropped while this command was being executed*/
-	bool bConnectionDropped;
 
 	/** Current Commit full SHA1 */
 	FString CommitId;

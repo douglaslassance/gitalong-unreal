@@ -1,4 +1,5 @@
 // Copyright (c) 2014-2022 Sebastien Rombauts (sebastien.rombauts@gmail.com)
+// Copyright (c) 2021-2026 Douglas Lassance
 //
 // Distributed under the MIT License (MIT) (See accompanying file LICENSE.txt
 // or copy at http://opensource.org/licenses/MIT)
@@ -10,6 +11,7 @@
 #include "ISourceControlState.h"
 #include "ISourceControlProvider.h"
 #include "IGitSourceControlWorker.h"
+#include "GitSourceControlCommand.h"
 #include "GitSourceControlState.h"
 #include "GitSourceControlMenu.h"
 #include "GitSourceControlConsole.h"
@@ -29,7 +31,6 @@ struct FGitVersion
 
 	uint32 bHasCatFileWithFilters : 1;
 	uint32 bHasGitLfs : 1;
-	uint32 bHasGitLfsLocking : 1;
 
 	FGitVersion() 
 		: Major(0)
@@ -38,7 +39,6 @@ struct FGitVersion
 		, Windows(0)
 		, bHasCatFileWithFilters(false)
 		, bHasGitLfs(false)
-		, bHasGitLfsLocking(false)
 	{
 	}
 
@@ -102,6 +102,11 @@ public:
 	void CheckGitAvailability();
 
 	/**
+	 * Check configuration, else standard paths, and run a Gitalong "version" command to check the availability of the binary.
+	 */
+	void CheckGitalongAvailability();
+
+	/**
 	 * Find the .git/ repository and check it's status.
 	 */
 	void CheckRepositoryStatus(const FString& InPathToGitBinary);
@@ -116,6 +121,18 @@ public:
 	inline const FGitVersion& GetGitVersion() const
 	{
 		return GitVersion;
+	}
+
+	/** Is a supported gitalong binary found and working. */
+	inline bool IsGitalongAvailable() const
+	{
+		return bGitalongAvailable;
+	}
+
+	/** Gitalong version, like "1.1.0" */
+	inline const FString& GetGitalongVersion() const
+	{
+		return GitalongVersion;
 	}
 
 	/** Get the path to the root of the Git repository: can be the ProjectDir itself, or any parent directory */
@@ -165,8 +182,14 @@ private:
 	/** Is git repository found. */
 	bool bGitRepositoryFound = false;
 
-	/** Is LFS File Locking enabled? */
-	bool bUsingGitLfsLocking = false;
+	/** Is a supported gitalong binary found and working. */
+	bool bGitalongAvailable = false;
+
+	/** Gitalong version, like "1.1.0" */
+	FString GitalongVersion;
+
+	/** Gitalong configuration of the repository, read on connection */
+	FGitalongConfig GitalongConfig;
 
 	/** Helper function for Execute() */
 	TSharedPtr<class IGitSourceControlWorker, ESPMode::ThreadSafe> CreateWorker(const FName& InOperationName) const;
@@ -181,6 +204,9 @@ private:
 
 	/** Update repository status on Connect and UpdateStatus operations */
 	void UpdateRepositoryStatus(const class FGitSourceControlCommand& InCommand);
+
+	/** Switch the checkout workflow on or off according to the Gitalong configuration of the repository */
+	void SetGitalongConfig(const FGitalongConfig& InConfig);
 
 	/** Path to the root of the Git repository: can be the ProjectDir itself, or any parent directory (found by the "Connect" operation) */
 	FString PathToRepositoryRoot;

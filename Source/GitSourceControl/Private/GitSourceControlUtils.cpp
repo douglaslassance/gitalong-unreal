@@ -1,4 +1,5 @@
 // Copyright (c) 2014-2022 Sebastien Rombauts (sebastien.rombauts@gmail.com)
+// Copyright (c) 2021-2026 Douglas Lassance
 //
 // Distributed under the MIT License (MIT) (See accompanying file LICENSE.txt
 // or copy at http://opensource.org/licenses/MIT)
@@ -15,6 +16,9 @@
 #include "ISourceControlModule.h"
 #include "GitSourceControlModule.h"
 #include "GitSourceControlProvider.h"
+#include "Dom/JsonObject.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
 
 #if PLATFORM_LINUX
 #include <sys/ioctl.h>
@@ -30,6 +34,13 @@ namespace GitSourceControlConstants
 {
 	/** The maximum number of files we submit in a single Git command */
 	const int32 MaxFilesPerBatch = 50;
+
+	/** The maximum number of files we submit in a single Gitalong command, which reads the store once per call */
+	const int32 MaxFilesPerGitalongBatch = 100;
+
+	/** Oldest Gitalong release with the "--json" output */
+	const int32 MinGitalongMajorVersion = 1;
+	const int32 MinGitalongMinorVersion = 1;
 }
 
 FGitScopedTempFile::FGitScopedTempFile(const FText& InText)
@@ -61,10 +72,10 @@ const FString& FGitScopedTempFile::GetFilename() const
 namespace GitSourceControlUtils
 {
 
-// Launch the Git command line process and extract its results & errors
-bool RunCommandInternalRaw(const FString& InCommand, const FString& InPathToGitBinary, const FString& InRepositoryRoot, const TArray<FString>& InParameters, const TArray<FString>& InFiles, FString& OutResults, FString& OutErrors, const int32 ExpectedReturnCode /* = 0 */)
+// Launch a Git or Gitalong command line process and extract its results & errors
+static bool ExecCommand(const FString& InCommand, const FString& InPathToBinary, const FString& InRepositoryRoot, const TArray<FString>& InParameters, const TArray<FString>& InFiles, FString& OutResults, FString& OutErrors, int32& OutReturnCode)
 {
-	int32 ReturnCode = 0;
+	OutReturnCode = 0;
 	FString FullCommand;
 	FString LogableCommand; // short version of the command for logging purpose
 
@@ -107,33 +118,39 @@ bool RunCommandInternalRaw(const FString& InCommand, const FString& InPathToGitB
 
 	FullCommand += LogableCommand;
 
-	UE_LOG(LogSourceControl, Log, TEXT("RunCommand: 'git %s'"), *LogableCommand);
+	UE_LOG(LogSourceControl, Log, TEXT("RunCommand: '%s %s'"), *FPaths::GetBaseFilename(InPathToBinary), *LogableCommand);
 
-	FString PathToGitOrEnvBinary = InPathToGitBinary;
+	FString PathToBinaryOrEnv = InPathToBinary;
 #if PLATFORM_MAC
 	// The Cocoa application does not inherit shell environment variables, so add the path expected to have git-lfs to PATH
 	FString PathEnv = FPlatformMisc::GetEnvironmentVariable(TEXT("PATH"));
-	FString GitInstallPath = FPaths::GetPath(InPathToGitBinary);
+	FString InstallPath = FPaths::GetPath(InPathToBinary);
 
 	TArray<FString> PathArray;
 	PathEnv.ParseIntoArray(PathArray, FPlatformMisc::GetPathVarDelimiter());
-	bool bHasGitInstallPath = false;
+	bool bHasInstallPath = false;
 	for (auto Path : PathArray)
 	{
-		if (GitInstallPath.Equals(Path, ESearchCase::CaseSensitive))
+		if (InstallPath.Equals(Path, ESearchCase::CaseSensitive))
 		{
-			bHasGitInstallPath = true;
+			bHasInstallPath = true;
 			break;
 		}
 	}
 
-	if (!bHasGitInstallPath)
+	if (!bHasInstallPath)
 	{
-		PathToGitOrEnvBinary = FString("/usr/bin/env");
-		FullCommand = FString::Printf(TEXT("PATH=\"%s%s%s\" \"%s\" %s"), *GitInstallPath, FPlatformMisc::GetPathVarDelimiter(), *PathEnv, *InPathToGitBinary, *FullCommand);
+		PathToBinaryOrEnv = FString("/usr/bin/env");
+		FullCommand = FString::Printf(TEXT("PATH=\"%s%s%s\" \"%s\" %s"), *InstallPath, FPlatformMisc::GetPathVarDelimiter(), *PathEnv, *InPathToBinary, *FullCommand);
 	}
 #endif
-	FPlatformProcess::ExecProcess(*PathToGitOrEnvBinary, *FullCommand, &ReturnCode, &OutResults, &OutErrors);
+	return FPlatformProcess::ExecProcess(*PathToBinaryOrEnv, *FullCommand, &OutReturnCode, &OutResults, &OutErrors);
+}
+
+bool RunCommandInternalRaw(const FString& InCommand, const FString& InPathToGitBinary, const FString& InRepositoryRoot, const TArray<FString>& InParameters, const TArray<FString>& InFiles, FString& OutResults, FString& OutErrors, const int32 ExpectedReturnCode /* = 0 */)
+{
+	int32 ReturnCode = 0;
+	ExecCommand(InCommand, InPathToGitBinary, InRepositoryRoot, InParameters, InFiles, OutResults, OutErrors, ReturnCode);
 
 	// TODO: add a setting to easily enable Verbose logging
 	UE_LOG(LogSourceControl, Verbose, TEXT("RunCommand(%s):\n%s"), *InCommand, *OutResults);
@@ -247,7 +264,12 @@ FString FindGitBinaryPath()
 	FString GitBinaryPath = TEXT("/usr/local/git/bin/git");
 	bool bFound = CheckGitAvailability(GitBinaryPath);
 
-	// 2) Else, look for the version of git provided by Homebrew
+	// 2) Else, look for the version of git provided by Homebrew (Apple silicon, then Intel)
+	if (!bFound)
+	{
+		GitBinaryPath = TEXT("/opt/homebrew/bin/git");
+		bFound = CheckGitAvailability(GitBinaryPath);
+	}
 	if (!bFound)
 	{
 		GitBinaryPath = TEXT("/usr/local/bin/git");
@@ -324,6 +346,11 @@ FString FindGitBinaryPath()
 #else
 	FString GitBinaryPath = TEXT("/usr/bin/git");
 	bool bFound = CheckGitAvailability(GitBinaryPath);
+	if (!bFound)
+	{
+		GitBinaryPath = TEXT("/usr/local/bin/git");
+		bFound = CheckGitAvailability(GitBinaryPath);
+	}
 #endif
 
 	if(bFound)
@@ -359,6 +386,108 @@ bool CheckGitAvailability(const FString& InPathToGitBinary, FGitVersion *OutVers
 	}
 
 	return bGitAvailable;
+}
+
+FString FindGitalongBinaryPath()
+{
+#if PLATFORM_WINDOWS
+	const FString BinaryName(TEXT("gitalong.exe"));
+#else
+	const FString BinaryName(TEXT("gitalong"));
+#endif
+	const FString HomePath = FPlatformMisc::GetEnvironmentVariable(TEXT("HOME"));
+
+	TArray<FString> Candidates;
+#if PLATFORM_WINDOWS
+	const FString UserProfilePath = FPlatformMisc::GetEnvironmentVariable(TEXT("USERPROFILE"));
+	const FString AppDataLocalPath = FPlatformMisc::GetEnvironmentVariable(TEXT("LOCALAPPDATA"));
+	Candidates.Add(FPaths::Combine(UserProfilePath, TEXT(".cargo/bin"), BinaryName));
+	Candidates.Add(FPaths::Combine(AppDataLocalPath, TEXT("Programs/gitalong"), BinaryName));
+	Candidates.Add(FPaths::Combine(TEXT("C:/Program Files/gitalong"), BinaryName));
+#elif PLATFORM_MAC
+	// Homebrew (Apple silicon, then Intel), then Cargo
+	Candidates.Add(FPaths::Combine(TEXT("/opt/homebrew/bin"), BinaryName));
+	Candidates.Add(FPaths::Combine(TEXT("/usr/local/bin"), BinaryName));
+	Candidates.Add(FPaths::Combine(HomePath, TEXT(".cargo/bin"), BinaryName));
+#else
+	Candidates.Add(FPaths::Combine(TEXT("/usr/local/bin"), BinaryName));
+	Candidates.Add(FPaths::Combine(TEXT("/usr/bin"), BinaryName));
+	Candidates.Add(FPaths::Combine(HomePath, TEXT(".cargo/bin"), BinaryName));
+	Candidates.Add(FPaths::Combine(HomePath, TEXT(".local/bin"), BinaryName));
+#endif
+
+	// Then whatever the PATH of the editor knows about
+	TArray<FString> PathArray;
+	FPlatformMisc::GetEnvironmentVariable(TEXT("PATH")).ParseIntoArray(PathArray, FPlatformMisc::GetPathVarDelimiter());
+	for (const FString& Path : PathArray)
+	{
+		Candidates.Add(FPaths::Combine(Path, BinaryName));
+	}
+
+	for (FString& Candidate : Candidates)
+	{
+		if (FPaths::FileExists(Candidate) && CheckGitalongAvailability(Candidate))
+		{
+			FPaths::MakePlatformFilename(Candidate);
+			return Candidate;
+		}
+	}
+	return FString();
+}
+
+bool CheckGitalongAvailability(const FString& InPathToGitalongBinary, FString* OutVersion)
+{
+	FString InfoMessages;
+	FString ErrorMessages;
+	if (!RunCommandInternalRaw(TEXT("version"), InPathToGitalongBinary, FString(), TArray<FString>(), TArray<FString>(), InfoMessages, ErrorMessages))
+	{
+		return false;
+	}
+
+	// Parse "gitalong version 1.1.0"
+	TArray<FString> Tokens;
+	InfoMessages.ParseIntoArrayWS(Tokens);
+	if (Tokens.Num() < 3 || Tokens[0] != TEXT("gitalong"))
+	{
+		return false;
+	}
+	TArray<FString> Numbers;
+	Tokens[2].ParseIntoArray(Numbers, TEXT("."));
+	if (Numbers.Num() < 2)
+	{
+		return false;
+	}
+	const int32 Major = FCString::Atoi(*Numbers[0]);
+	const int32 Minor = FCString::Atoi(*Numbers[1]);
+	const bool bSupported = (Major > GitSourceControlConstants::MinGitalongMajorVersion)
+		|| (Major == GitSourceControlConstants::MinGitalongMajorVersion && Minor >= GitSourceControlConstants::MinGitalongMinorVersion);
+	if (!bSupported)
+	{
+		UE_LOG(LogSourceControl, Warning, TEXT("Gitalong %s is too old, %d.%d or later is required"), *Tokens[2], GitSourceControlConstants::MinGitalongMajorVersion, GitSourceControlConstants::MinGitalongMinorVersion);
+		return false;
+	}
+	if (OutVersion)
+	{
+		*OutVersion = Tokens[2];
+	}
+	return true;
+}
+
+void AddBinaryDirectoryToPath(const FString& InPathToBinary)
+{
+	FString Directory = FPaths::GetPath(InPathToBinary);
+	if (Directory.IsEmpty())
+	{
+		return;
+	}
+	FPaths::MakePlatformFilename(Directory);
+	const FString PathEnv = FPlatformMisc::GetEnvironmentVariable(TEXT("PATH"));
+	TArray<FString> PathArray;
+	PathEnv.ParseIntoArray(PathArray, FPlatformMisc::GetPathVarDelimiter());
+	if (!PathArray.Contains(Directory))
+	{
+		FPlatformMisc::SetEnvironmentVar(TEXT("PATH"), *FString::Printf(TEXT("%s%s%s"), *Directory, FPlatformMisc::GetPathVarDelimiter(), *PathEnv));
+	}
 }
 
 void ParseGitVersion(const FString& InVersionString, FGitVersion *OutVersion)
@@ -413,11 +542,6 @@ void FindGitLfsCapabilities(const FString& InPathToGitBinary, FGitVersion *OutVe
 	if(bGitLfsAvailable)
 	{
 		OutVersion->bHasGitLfs = true;
-
-		if(InfoMessages.Compare(TEXT("git-lfs/2.0.0")) >= 0)
-		{
-			OutVersion->bHasGitLfsLocking = true; // Git LFS File Locking workflow introduced in "git-lfs/2.0.0"
-		}
 		UE_LOG(LogSourceControl, Log, TEXT("%s"), *InfoMessages);
 	}
 }
@@ -639,36 +763,6 @@ bool RunCommit(const FString& InPathToGitBinary, const FString& InRepositoryRoot
 }
 
 /**
- * Parse informations on a file locked with Git LFS
- *
- * Example output of "git lfs locks"
-Content\ThirdPersonBP\Blueprints\ThirdPersonCharacter.uasset    SRombauts       ID:891
-Content\ThirdPersonBP\Blueprints\ThirdPersonGameMode.uasset     SRombauts       ID:896
- */
-class FGitLfsLocksParser
-{
-public:
-	FGitLfsLocksParser(const FString& InRepositoryRoot, const FString& InStatus, const bool bAbsolutePaths = true)
-	{
-		TArray<FString> Informations;
-		InStatus.ParseIntoArray(Informations, TEXT("\t"), true);
-		if(Informations.Num() >= 3)
-		{
-			Informations[0].TrimEndInline(); // Trim whitespace from the end of the filename
-			Informations[1].TrimEndInline(); // Trim whitespace from the end of the username
-			if (bAbsolutePaths)
-				LocalFilename = FPaths::ConvertRelativePathToFull(InRepositoryRoot, Informations[0]);
-			else
-				LocalFilename = Informations[0];
-			LockUser = MoveTemp(Informations[1]);
-		}
-	}
-
-	FString LocalFilename;	///< Filename on disk
-	FString LockUser;		///< Name of user who has file locked
-};
-
-/**
  * @brief Extract the relative filename from a Git status result.
  *
  * Examples of status results:
@@ -876,24 +970,21 @@ R  Content/Textures/T_Perlin_Noise_M.uasset -> Content/Textures/T_Perlin_Noise_M
 ?? Content/Materials/M_Basic_Wall.uasset
 !! BasicCode.sln
 */
-static void ParseFileStatusResult(const FString& InPathToGitBinary, const FString& InRepositoryRoot, const bool InUsingLfsLocking, const TArray<FString>& InFiles, const TMap<FString, FString>& InLockedFiles, const TArray<FString>& InResults, TArray<FGitSourceControlState>& OutStates)
+static void ParseFileStatusResult(const FString& InPathToGitBinary, const FString& InRepositoryRoot, const bool bInUsesCheckout, const TArray<FString>& InFiles, const TArray<FString>& InResults, TArray<FGitSourceControlState>& OutStates)
 {
-	FGitSourceControlModule& GitSourceControl = FModuleManager::GetModuleChecked<FGitSourceControlModule>("GitSourceControl");
-	const FString LfsUserName = GitSourceControl.AccessSettings().GetLfsUserName();
 	const FDateTime Now = FDateTime::Now();
 
 	// Iterate on all files explicitly listed in the command
 	for(const auto& File : InFiles)
 	{
-		FGitSourceControlState FileState(File, InUsingLfsLocking);
+		FGitSourceControlState FileState(File, bInUsesCheckout);
 		// Search the file in the list of status
 		int32 IdxResult = InResults.IndexOfByPredicate(FGitStatusFileMatcher(File));
 		if(IdxResult != INDEX_NONE)
 		{
 			// File found in status results; only the case for "changed" files
 			FGitStatusParser StatusParser(InResults[IdxResult]);
-			// TODO LFS Debug log
-			UE_LOG(LogSourceControl, Log, TEXT("Status(%s) = '%s' => %d"), *File, *InResults[IdxResult], static_cast<int>(StatusParser.State));
+			UE_LOG(LogSourceControl, Verbose, TEXT("Status(%s) = '%s' => %d"), *File, *InResults[IdxResult], static_cast<int>(StatusParser.State));
 
 			FileState.WorkingCopyState = StatusParser.State;
 			if(FileState.IsConflicted())
@@ -909,38 +1000,13 @@ static void ParseFileStatusResult(const FString& InPathToGitBinary, const FStrin
 			{
 				// usually means the file is unchanged,
 				FileState.WorkingCopyState = EWorkingCopyState::Unchanged;
-				// TODO LFS Debug log
-				UE_LOG(LogSourceControl, Log, TEXT("Status(%s) not found but exists => unchanged"), *File);
+				UE_LOG(LogSourceControl, Verbose, TEXT("Status(%s) not found but exists => unchanged"), *File);
 			}
 			else
 			{
 				// but also the case for newly created content: there is no file on disk until the content is saved for the first time
 				FileState.WorkingCopyState = EWorkingCopyState::NotControlled;
-				// TODO LFS Debug log
-				UE_LOG(LogSourceControl, Log, TEXT("Status(%s) not found and does not exists => new/not controled"), *File);
-			}
-		}
-		if(InLockedFiles.Contains(File))
-		{
-			FileState.LockUser = InLockedFiles[File];
-			if(LfsUserName == FileState.LockUser)
-			{
-				FileState.LockState = ELockState::Locked;
-			}
-			else
-			{
-				FileState.LockState = ELockState::LockedOther;
-			}
-			// TODO LFS Debug log
-			UE_LOG(LogSourceControl, Log, TEXT("Status(%s) Locked by '%s'"), *File, *FileState.LockUser);
-		}
-		else
-		{
-			FileState.LockState = ELockState::NotLocked;
-			// TODO LFS Debug log
-			if (InUsingLfsLocking)
-			{
-				UE_LOG(LogSourceControl, Log, TEXT("Status(%s) Not Locked"), *File);
+				UE_LOG(LogSourceControl, Verbose, TEXT("Status(%s) not found and does not exists => new/not controled"), *File);
 			}
 		}
 		FileState.TimeStamp = Now;
@@ -955,7 +1021,7 @@ static void ParseFileStatusResult(const FString& InPathToGitBinary, const FStrin
  *
  * @see #ParseFileStatusResult() above for an example of a 'git status' results
 */
-static void ParseDirectoryStatusResult(const FString& InPathToGitBinary, const FString& InRepositoryRoot, const bool InUsingLfsLocking, const TArray<FString>& InResults, TArray<FGitSourceControlState>& OutStates)
+static void ParseDirectoryStatusResult(const FString& InPathToGitBinary, const FString& InRepositoryRoot, const bool bInUsesCheckout, const TArray<FString>& InResults, TArray<FGitSourceControlState>& OutStates)
 {
 	// Iterate on each line of result of the status command
 	for(const FString& Result : InResults)
@@ -963,7 +1029,7 @@ static void ParseDirectoryStatusResult(const FString& InPathToGitBinary, const F
 		const FString RelativeFilename = FilenameFromGitStatus(Result);
 		const FString File = FPaths::ConvertRelativePathToFull(InRepositoryRoot, RelativeFilename);
 
-		FGitSourceControlState FileState(File, InUsingLfsLocking);
+		FGitSourceControlState FileState(File, bInUsesCheckout);
 		FGitStatusParser StatusParser(Result);
 		if((EWorkingCopyState::Deleted == StatusParser.State) || (EWorkingCopyState::Missing == StatusParser.State) || (EWorkingCopyState::NotControlled == StatusParser.State))
 		{
@@ -982,67 +1048,217 @@ static void ParseDirectoryStatusResult(const FString& InPathToGitBinary, const F
  *
  * @param[in]	InPathToGitBinary	The path to the Git binary
  * @param[in]	InRepositoryRoot	The Git repository from where to run the command - usually the Game directory (can be empty)
- * @param[in]	InUsingLfsLocking	Tells if using the Git LFS file Locking workflow
+ * @param[in]	bInUsesCheckout		Tells if files must be claimed before being edited
  * @param[in]	InFiles				List of files in a directory, or the path to the directory itself (never empty).
  * @param[out]	InResults			Results from the "status" command
  * @param[out]	OutStates			States of files for witch the status has been gathered (distinct than InFiles in case of a "directory status")
  */
-static void ParseStatusResults(const FString& InPathToGitBinary, const FString& InRepositoryRoot, const bool InUsingLfsLocking, const TArray<FString>& InFiles, const TMap<FString, FString>& InLockedFiles, const TArray<FString>& InResults, TArray<FGitSourceControlState>& OutStates)
+static void ParseStatusResults(const FString& InPathToGitBinary, const FString& InRepositoryRoot, const bool bInUsesCheckout, const TArray<FString>& InFiles, const TArray<FString>& InResults, TArray<FGitSourceControlState>& OutStates)
 {
 	if((InFiles.Num() == 1) && FPaths::DirectoryExists(InFiles[0]))
 	{
 		// 1) Special case for "status" of a directory: requires to get the list of files by ourselves.
 		//   (this is triggered by the "Submit to Source Control" menu)
-		// TODO LFS Debug Log
-		UE_LOG(LogSourceControl, Log, TEXT("ParseStatusResults: 1) Special case for status of a directory (%s)"), *InFiles[0]);
+		UE_LOG(LogSourceControl, Verbose, TEXT("ParseStatusResults: 1) Special case for status of a directory (%s)"), *InFiles[0]);
 		TArray<FString> Files;
 		const FString& Directory = InFiles[0];
 		const bool bResult = ListFilesInDirectoryRecurse(InPathToGitBinary, InRepositoryRoot, Directory, Files);
 		if(bResult)
 		{
-			ParseFileStatusResult(InPathToGitBinary, InRepositoryRoot, InUsingLfsLocking, Files, InLockedFiles, InResults, OutStates);
+			ParseFileStatusResult(InPathToGitBinary, InRepositoryRoot, bInUsesCheckout, Files, InResults, OutStates);
 		}
 		// The above cannot detect deleted assets since there is no file left to enumerate (either by the Content Browser or by git ls-files)
 		// => so we also parse the status results to explicitly look for Deleted/Missing assets
-		ParseDirectoryStatusResult(InPathToGitBinary, InRepositoryRoot, InUsingLfsLocking, InResults, OutStates);
+		ParseDirectoryStatusResult(InPathToGitBinary, InRepositoryRoot, bInUsesCheckout, InResults, OutStates);
 	}
 	else
 	{
 		// 2) General case for one or more files in the same directory.
-		// TODO LFS Debug Log
-		UE_LOG(LogSourceControl, Log, TEXT("ParseStatusResults: 2) General case for one or more files (%s, ...)"), *InFiles[0]);
-		ParseFileStatusResult(InPathToGitBinary, InRepositoryRoot, InUsingLfsLocking, InFiles, InLockedFiles, InResults, OutStates);
+		UE_LOG(LogSourceControl, Verbose, TEXT("ParseStatusResults: 2) General case for one or more files (%s, ...)"), *InFiles[0]);
+		ParseFileStatusResult(InPathToGitBinary, InRepositoryRoot, bInUsesCheckout, InFiles, InResults, OutStates);
 	}
 }
 
-bool GetAllLocks(const FString& InPathToGitBinary, const FString& InRepositoryRoot, const bool bAbsolutePaths, TArray<FString>& OutErrorMessages, TMap<FString, FString>& OutLocks)
+/** Repository relative path with forward slashes, the form Gitalong reports back */
+static FString GitalongRelativeFilename(const FString& InFile, const FString& InRepositoryRoot)
 {
-	TArray<FString> Results;
-	TArray<FString> ErrorMessages;
-	const bool bResult = RunCommand(TEXT("lfs locks"), InPathToGitBinary, InRepositoryRoot, TArray<FString>(), TArray<FString>(), Results, ErrorMessages);
-	for(const FString& Result : Results)
+	FString RelativeFile = InFile;
+	FPaths::MakePathRelativeTo(RelativeFile, *(InRepositoryRoot / TEXT("")));
+	return RelativeFile.Replace(TEXT("\\"), TEXT("/"));
+}
+
+/** Parse one record of `gitalong status --json` or `gitalong claim --json` */
+static FGitalongStatus ParseGitalongRecord(const TSharedPtr<FJsonObject>& InRecord)
+{
+	FGitalongStatus Status;
+	Status.bKnown = true;
+
+	// The spread string lists the flags in bit order, like "-+-+----"
+	FString Spread;
+	if (InRecord->TryGetStringField(TEXT("spread"), Spread))
 	{
-		FGitLfsLocksParser LockFile(InRepositoryRoot, Result, bAbsolutePaths);
-		// TODO LFS Debug log
-		UE_LOG(LogSourceControl, Log, TEXT("LockedFile(%s, %s)"), *LockFile.LocalFilename, *LockFile.LockUser);
-		OutLocks.Add(MoveTemp(LockFile.LocalFilename), MoveTemp(LockFile.LockUser));
+		for (int32 Bit = 0; Bit < Spread.Len() && Bit < 8; ++Bit)
+		{
+			if (Spread[Bit] == TEXT('+'))
+			{
+				Status.Spread |= static_cast<EGitalongSpread>(1 << Bit);
+			}
+		}
 	}
 
+	const TSharedPtr<FJsonObject>* Commit = nullptr;
+	if (InRecord->TryGetObjectField(TEXT("commit"), Commit) && Commit && Commit->IsValid())
+	{
+		(*Commit)->TryGetStringField(TEXT("sha"), Status.Sha);
+		(*Commit)->TryGetStringField(TEXT("author"), Status.Author);
+		(*Commit)->TryGetStringField(TEXT("user"), Status.User);
+		(*Commit)->TryGetStringField(TEXT("host"), Status.Host);
+		const TSharedPtr<FJsonObject>* Branches = nullptr;
+		if ((*Commit)->TryGetObjectField(TEXT("branches"), Branches) && Branches && Branches->IsValid())
+		{
+			(*Branches)->TryGetStringArrayField(TEXT("local"), Status.LocalBranches);
+			(*Branches)->TryGetStringArrayField(TEXT("remote"), Status.RemoteBranches);
+		}
+	}
+	return Status;
+}
+
+/**
+ * Run a Gitalong command that prints a JSON array of file records, by batches.
+ *
+ * Example output of "gitalong status --json Content/A.uasset":
+[
+  {
+    "filename": "Content/A.uasset",
+    "spread": "-------+",
+    "flags": ["THEIR_UNCOMMITTED"],
+    "commit": {"user": "bob", "host": "studio-2", "changes": ["Content/A.uasset"]}
+  }
+]
+ *
+ * @returns true if every batch ran and printed valid JSON, even with a non zero exit code (claim reports blocked files that way)
+ */
+static bool RunGitalongJsonCommand(const FString& InCommand, const FString& InPathToGitalongBinary, const FString& InPathToGitBinary, const FString& InRepositoryRoot, const TArray<FString>& InFiles, TMap<FString, TSharedPtr<FJsonObject>>& OutRecords, TArray<FString>& OutErrorMessages)
+{
+	TArray<FString> Parameters;
+	if (!InPathToGitBinary.IsEmpty())
+	{
+		Parameters.Add(FString::Printf(TEXT("--git-binary \"%s\""), *InPathToGitBinary));
+	}
+	Parameters.Add(TEXT("--json"));
+
+	bool bResult = true;
+	for (int32 FileIndex = 0; FileIndex < InFiles.Num(); FileIndex += GitSourceControlConstants::MaxFilesPerGitalongBatch)
+	{
+		TArray<FString> RelativeFiles;
+		TMap<FString, FString> AbsoluteFiles;
+		const int32 BatchEnd = FMath::Min(FileIndex + GitSourceControlConstants::MaxFilesPerGitalongBatch, InFiles.Num());
+		for (int32 Index = FileIndex; Index < BatchEnd; ++Index)
+		{
+			const FString RelativeFile = GitalongRelativeFilename(InFiles[Index], InRepositoryRoot);
+			RelativeFiles.Add(RelativeFile);
+			AbsoluteFiles.Add(RelativeFile, InFiles[Index]);
+		}
+
+		FString Results;
+		FString Errors;
+		int32 ReturnCode = 0;
+		ExecCommand(InCommand, InPathToGitalongBinary, InRepositoryRoot, Parameters, RelativeFiles, Results, Errors, ReturnCode);
+
+		TArray<TSharedPtr<FJsonValue>> Records;
+		const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Results);
+		if (!FJsonSerializer::Deserialize(Reader, Records))
+		{
+			UE_LOG(LogSourceControl, Warning, TEXT("RunCommand(gitalong %s) ReturnCode=%d:\n%s"), *InCommand, ReturnCode, *Errors);
+			Errors.ParseIntoArray(OutErrorMessages, TEXT("\n"), true);
+			bResult = false;
+			continue;
+		}
+		UE_LOG(LogSourceControl, Verbose, TEXT("RunCommand(gitalong %s):\n%s"), *InCommand, *Results);
+
+		for (const TSharedPtr<FJsonValue>& Record : Records)
+		{
+			const TSharedPtr<FJsonObject>* RecordObject = nullptr;
+			FString Filename;
+			if (Record.IsValid() && Record->TryGetObject(RecordObject) && (*RecordObject)->TryGetStringField(TEXT("filename"), Filename))
+			{
+				if (const FString* AbsoluteFile = AbsoluteFiles.Find(Filename))
+				{
+					OutRecords.Add(*AbsoluteFile, *RecordObject);
+				}
+			}
+		}
+	}
 	return bResult;
 }
 
-// Run a batch of Git "status" command to update status of given files and/or directories.
-bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InRepositoryRoot, const bool InUsingLfsLocking, const TArray<FString>& InFiles, TArray<FString>& OutErrorMessages, TArray<FGitSourceControlState>& OutStates)
+bool GetGitalongConfig(const FString& InPathToGitalongBinary, const FString& InRepositoryRoot, FGitalongConfig& OutConfig)
 {
-	bool bResults = true;
-	TMap<FString, FString> LockedFiles;
-
-	// 0) Issue a "git lfs locks" command at the root of the repository
-	if(InUsingLfsLocking)
+	// "gitalong config" prints nothing outside of a repository set up for Gitalong
+	auto ReadProperty = [&InPathToGitalongBinary, &InRepositoryRoot](const TCHAR* InProperty, FString& OutValue)
 	{
+		TArray<FString> Parameters;
+		Parameters.Add(InProperty);
+		TArray<FString> Results;
 		TArray<FString> ErrorMessages;
-		GetAllLocks(InPathToGitBinary, InRepositoryRoot, true, ErrorMessages, LockedFiles);
+		const bool bResult = RunCommandInternal(TEXT("config"), InPathToGitalongBinary, InRepositoryRoot, Parameters, TArray<FString>(), Results, ErrorMessages);
+		OutValue = (bResult && Results.Num() > 0) ? Results[0].TrimStartAndEnd() : FString();
+		return !OutValue.IsEmpty();
+	};
+
+	FString TrackUncommitted;
+	FString ModifyPermissions;
+	if (!ReadProperty(TEXT("track-uncommitted"), TrackUncommitted) || !ReadProperty(TEXT("modify-permissions"), ModifyPermissions))
+	{
+		return false;
 	}
+	OutConfig.bTrackUncommitted = TrackUncommitted == TEXT("true");
+	OutConfig.bModifyPermissions = ModifyPermissions == TEXT("true");
+	return true;
+}
+
+bool RunGitalongUpdate(const FString& InPathToGitalongBinary, const FString& InPathToGitBinary, const FString& InRepositoryRoot, TArray<FString>& OutResults, TArray<FString>& OutErrorMessages)
+{
+	TArray<FString> Parameters;
+	if (!InPathToGitBinary.IsEmpty())
+	{
+		Parameters.Add(FString::Printf(TEXT("--git-binary \"%s\""), *InPathToGitBinary));
+	}
+	return RunCommandInternal(TEXT("update"), InPathToGitalongBinary, InRepositoryRoot, Parameters, TArray<FString>(), OutResults, OutErrorMessages);
+}
+
+bool RunGitalongClaim(const FString& InPathToGitalongBinary, const FString& InPathToGitBinary, const FString& InRepositoryRoot, const TArray<FString>& InFiles, TMap<FString, FGitalongStatus>& OutBlockers, TArray<FString>& OutErrorMessages)
+{
+	TMap<FString, TSharedPtr<FJsonObject>> Records;
+	const bool bResult = RunGitalongJsonCommand(TEXT("claim"), InPathToGitalongBinary, InPathToGitBinary, InRepositoryRoot, InFiles, Records, OutErrorMessages);
+	for (const TPair<FString, TSharedPtr<FJsonObject>>& Record : Records)
+	{
+		bool bBlocked = false;
+		if (Record.Value->TryGetBoolField(TEXT("blocked"), bBlocked) && bBlocked)
+		{
+			OutBlockers.Add(Record.Key, ParseGitalongRecord(Record.Value));
+		}
+	}
+	return bResult && Records.Num() == InFiles.Num();
+}
+
+bool RunGitalongStatus(const FString& InPathToGitalongBinary, const FString& InPathToGitBinary, const FString& InRepositoryRoot, const TArray<FString>& InFiles, TMap<FString, FGitalongStatus>& OutStatuses, TArray<FString>& OutErrorMessages)
+{
+	TMap<FString, TSharedPtr<FJsonObject>> Records;
+	const bool bResult = RunGitalongJsonCommand(TEXT("status"), InPathToGitalongBinary, InPathToGitBinary, InRepositoryRoot, InFiles, Records, OutErrorMessages);
+	for (const TPair<FString, TSharedPtr<FJsonObject>>& Record : Records)
+	{
+		OutStatuses.Add(Record.Key, ParseGitalongRecord(Record.Value));
+	}
+	return bResult;
+}
+
+// Run a batch of Git "status" command to update status of given files and/or directories, then ask Gitalong about them.
+bool RunUpdateStatus(const FGitSourceControlCommand& InCommand, const TArray<FString>& InFiles, TArray<FString>& OutErrorMessages, TArray<FGitSourceControlState>& OutStates)
+{
+	const FString& PathToGitBinary = InCommand.PathToGitBinary;
+	const FString& RepositoryRoot = InCommand.PathToRepositoryRoot;
+	bool bResults = true;
 
 	// Git status does not show any "untracked files" when called with files from different subdirectories! (issue #3)
 	// 1) So here we group files by path (ie. by subdirectory)
@@ -1063,15 +1279,12 @@ bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InReposito
 		}
 	}
 
-	// Get the current branch name, since we need origin of current branch
-	FString BranchName;
-	GitSourceControlUtils::GetBranchName(InPathToGitBinary, InRepositoryRoot, BranchName);
-
 	TArray<FString> Parameters;
 	Parameters.Add(TEXT("--porcelain"));
 	Parameters.Add(TEXT("--ignored"));
 
 	// 2) then we can batch git status operation by subdirectory
+	const int32 FirstState = OutStates.Num();
 	for(const auto& Files : GroupOfFiles)
 	{
 		// "git status" can only detect renamed and deleted files when it operate on a folder, so use one folder path for all files in a directory
@@ -1087,50 +1300,48 @@ bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InReposito
 		{
 			OnePath.Add(Path);
 		}
+		TArray<FString> Results;
+		TArray<FString> ErrorMessages;
+		const bool bResult = RunCommand(TEXT("status"), PathToGitBinary, RepositoryRoot, Parameters, OnePath, Results, ErrorMessages);
+		OutErrorMessages.Append(ErrorMessages);
+		if(bResult)
 		{
-			TArray<FString> Results;
-			TArray<FString> ErrorMessages;
-			const bool bResult = RunCommand(TEXT("status"), InPathToGitBinary, InRepositoryRoot, Parameters, OnePath, Results, ErrorMessages);
-			OutErrorMessages.Append(ErrorMessages);
-			if(bResult)
-			{
-				ParseStatusResults(InPathToGitBinary, InRepositoryRoot, InUsingLfsLocking, Files.Value, LockedFiles, Results, OutStates);
-			}
+			ParseStatusResults(PathToGitBinary, RepositoryRoot, InCommand.bUsesCheckout, Files.Value, Results, OutStates);
 		}
+		bResults &= bResult;
+	}
 
-		if (!BranchName.IsEmpty())
+	if (InCommand.PathToGitalongBinary.IsEmpty())
+	{
+		return bResults;
+	}
+
+	// 3) Ask Gitalong where the latest change of each file lives. Files listed by a directory status (like the whole
+	// "Content/" at connection) are only asked about when changed locally, the editor queries the others when it shows them.
+	TSet<FString> RequestedFiles(InFiles);
+	TArray<FString> GitalongFiles;
+	for (int32 Index = FirstState; Index < OutStates.Num(); ++Index)
+	{
+		const FGitSourceControlState& State = OutStates[Index];
+		if (RequestedFiles.Contains(State.LocalFilename) || State.IsModified())
 		{
-			// Using git diff, we can obtain a list of files that were modified between our current origin and HEAD. Assumes that fetch has been run to get accurate info.
-			// TODO: should do a fetch (at least periodically).
-			TArray<FString> Results;
-			TArray<FString> ErrorMessages;
-			TArray<FString> ParametersLsRemote;
-			ParametersLsRemote.Add(TEXT("origin"));
-			ParametersLsRemote.Add(BranchName);
-			const bool bResultLsRemote = RunCommand(TEXT("ls-remote"), InPathToGitBinary, InRepositoryRoot, ParametersLsRemote, OnePath, Results, ErrorMessages);
-			// If the command is successful and there is only 1 line on the output the branch exists on remote
-			const bool bDiffAgainstRemote = bResultLsRemote && Results.Num();
-
-			Results.Reset();
-			ErrorMessages.Reset();
-			TArray<FString> ParametersLog;
-			ParametersLog.Add(TEXT("--pretty=")); // this omits the commit lines, just gets us files
-			ParametersLog.Add(TEXT("--name-only"));
-			ParametersLog.Add(bDiffAgainstRemote ? TEXT("HEAD..HEAD@{upstream}") : BranchName);
-			const bool bResultDiff = RunCommand(TEXT("log"), InPathToGitBinary, InRepositoryRoot, ParametersLog, OnePath, Results, ErrorMessages);
-			OutErrorMessages.Append(ErrorMessages);
-			if (bResultDiff)
+			GitalongFiles.Add(State.LocalFilename);
+		}
+	}
+	if (GitalongFiles.Num() > 0)
+	{
+		TMap<FString, FGitalongStatus> Statuses;
+		TArray<FString> ErrorMessages;
+		if (!RunGitalongStatus(InCommand.PathToGitalongBinary, PathToGitBinary, RepositoryRoot, GitalongFiles, Statuses, ErrorMessages))
+		{
+			// Keep the Git status usable when the Gitalong store cannot be reached
+			UE_LOG(LogSourceControl, Warning, TEXT("Gitalong status failed: %s"), *FString::Join(ErrorMessages, TEXT("\n")));
+		}
+		for (int32 Index = FirstState; Index < OutStates.Num(); ++Index)
+		{
+			if (const FGitalongStatus* Status = Statuses.Find(OutStates[Index].LocalFilename))
 			{
-				for (const FString& NewerFileName : Results)
-				{
-					const FString NewerFilePath = FPaths::ConvertRelativePathToFull(InRepositoryRoot, NewerFileName);
-
-					// Find existing corresponding file state to update it (not found would mean new file or not in the current path)
-					if (FGitSourceControlState* FileStatePtr = OutStates.FindByPredicate([NewerFilePath](FGitSourceControlState& FileState) { return FileState.LocalFilename == NewerFilePath; }))
-					{
-						FileStatePtr->bNewerVersionOnServer = true;
-					}
-				}
+				OutStates[Index].Gitalong = *Status;
 			}
 		}
 	}
@@ -1513,15 +1724,22 @@ bool UpdateCachedStates(const TArray<FGitSourceControlState>& InStates)
 {
 	FGitSourceControlModule& GitSourceControl = FModuleManager::GetModuleChecked<FGitSourceControlModule>( "GitSourceControl" );
 	FGitSourceControlProvider& Provider = GitSourceControl.GetProvider();
-	const bool bUsingGitLfsLocking = GitSourceControl.AccessSettings().IsUsingGitLfsLocking();
+	const bool bUsesCheckout = Provider.UsesCheckout();
 
-	// TODO without LFS : Workaround a bug with the Source Control Module not updating file state after a simple "Save" with no "Checkout" (when not using File Lock)
-	const FDateTime Now = bUsingGitLfsLocking ? FDateTime::Now() : FDateTime();
+	// TODO without checkout : Workaround a bug with the Source Control Module not updating file state after a simple "Save" with no "Checkout"
+	const FDateTime Now = bUsesCheckout ? FDateTime::Now() : FDateTime();
 
 	for(const auto& InState : InStates)
 	{
 		TSharedRef<FGitSourceControlState, ESPMode::ThreadSafe> State = Provider.GetStateInternal(InState.LocalFilename);
+		const FGitalongStatus PreviousGitalong = State->Gitalong;
 		*State = InState;
+		if (!InState.Gitalong.bKnown)
+		{
+			// Directory statuses skip Gitalong for unchanged files, keep what we knew about them
+			State->Gitalong = PreviousGitalong;
+		}
+		State->bUsesCheckout = bUsesCheckout;
 		State->TimeStamp = Now;
 	}
 

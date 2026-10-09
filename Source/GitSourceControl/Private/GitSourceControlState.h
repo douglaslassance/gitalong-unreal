@@ -1,4 +1,5 @@
 // Copyright (c) 2014-2022 Sebastien Rombauts (sebastien.rombauts@gmail.com)
+// Copyright (c) 2021-2026 Douglas Lassance
 //
 // Distributed under the MIT License (MIT) (See accompanying file LICENSE.txt
 // or copy at http://opensource.org/licenses/MIT)
@@ -29,27 +30,71 @@ namespace EWorkingCopyState
 	};
 }
 
-namespace ELockState
+/** Where the latest change to a file lives, in the bit order of the `gitalong status` spread string */
+enum class EGitalongSpread : uint8
 {
-	enum Type
-	{
-		Unknown,
-		NotLocked,
-		Locked,
-		LockedOther,
-	};
-}
+	None = 0,
+	MineUncommitted = 1 << 0,
+	MineActiveBranch = 1 << 1,
+	MineOtherBranch = 1 << 2,
+	RemoteMatchingBranch = 1 << 3,
+	RemoteOtherBranch = 1 << 4,
+	TheirOtherBranch = 1 << 5,
+	TheirMatchingBranch = 1 << 6,
+	TheirUncommitted = 1 << 7,
+};
+ENUM_CLASS_FLAGS(EGitalongSpread);
+
+/** Latest change to a file as reported by `gitalong status --json` */
+struct FGitalongStatus
+{
+	/** False until Gitalong has been queried for this file */
+	bool bKnown = false;
+
+	EGitalongSpread Spread = EGitalongSpread::None;
+
+	/** Empty for uncommitted changes */
+	FString Sha;
+
+	/** Git identity of the commit author */
+	FString Author;
+
+	/** OS identity of whoever published the record */
+	FString User;
+
+	FString Host;
+
+	TArray<FString> LocalBranches;
+
+	TArray<FString> RemoteBranches;
+
+	/** The change is this clone's alone, so the file is claimed (and writable) here */
+	bool IsClaimedByMe() const;
+
+	/** Somebody else holds a change that is not on this clone's active branch, so a claim would be blocked */
+	bool IsBlocked() const;
+
+	/** Blocked by a change already pushed to the remote branch matching the active one: a sync is required */
+	bool IsBehind() const;
+
+	/** Blocked by a change living on another branch than the active one */
+	bool IsOnOtherBranch() const;
+
+	/** Readable name of whoever holds the blocking change */
+	FString GetHolder() const;
+
+	/** First branch holding the change, remote branches first */
+	FString GetBranch() const;
+};
 
 class FGitSourceControlState : public ISourceControlState
 {
 public:
-	FGitSourceControlState(const FString& InLocalFilename, const bool InUsingLfsLocking)
+	FGitSourceControlState(const FString& InLocalFilename, const bool bInUsesCheckout)
 		: LocalFilename(InLocalFilename)
-		  , WorkingCopyState(EWorkingCopyState::Unknown)
-		  , LockState(ELockState::Unknown)
-		  , bUsingGitLfsLocking(InUsingLfsLocking)
-		  , bNewerVersionOnServer(false)
-		  , TimeStamp(0)
+		, WorkingCopyState(EWorkingCopyState::Unknown)
+		, bUsesCheckout(bInUsesCheckout)
+		, TimeStamp(0)
 	{
 	}
 
@@ -88,6 +133,9 @@ public:
 	virtual bool IsConflicted() const override;
 	virtual bool CanRevert() const override;
 
+	/** The working copy holds changes that Git can commit */
+	bool HasLocalChanges() const;
+
 public:
 	/** History of the item, if any */
 	TGitSourceControlHistory History;
@@ -101,17 +149,11 @@ public:
 	/** State of the working copy */
 	EWorkingCopyState::Type WorkingCopyState;
 
-	/** Lock state */
-	ELockState::Type LockState;
+	/** Latest change to the file across the team, as reported by Gitalong */
+	FGitalongStatus Gitalong;
 
-	/** Name of user who has locked the file */
-	FString LockUser;
-
-	/** Tells if using the Git LFS file Locking workflow */
-	bool bUsingGitLfsLocking;
-
-	/** Whether a newer version exists on the server */
-	bool bNewerVersionOnServer;
+	/** Tells if files must be claimed (checked out) before being edited */
+	bool bUsesCheckout;
 
 	/** The timestamp of the last update */
 	FDateTime TimeStamp;

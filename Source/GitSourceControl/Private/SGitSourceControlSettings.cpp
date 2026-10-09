@@ -1,4 +1,5 @@
 // Copyright (c) 2014-2022 Sebastien Rombauts (sebastien.rombauts@gmail.com)
+// Copyright (c) 2021-2026 Douglas Lassance
 //
 // Distributed under the MIT License (MIT) (See accompanying file LICENSE.txt
 // or copy at http://opensource.org/licenses/MIT)
@@ -80,6 +81,34 @@ void SGitSourceControlSettings::Construct(const FArguments& InArgs)
 					.FilePath(this, &SGitSourceControlSettings::GetBinaryPathString)
 					.FileTypeFilter(FileFilterText)
 					.OnPathPicked(this, &SGitSourceControlSettings::OnBinaryPathPicked)
+				]
+			]
+			// Path to the Gitalong command line executable
+			+ SVerticalBox::Slot()
+			  .AutoHeight()
+			  .Padding(2.0f)
+			  .VAlign(VAlign_Center)
+			[
+				SNew(SHorizontalBox)
+				.ToolTipText(LOCTEXT("GitalongBinaryPathLabel_Tooltip", "Path to Gitalong binary"))
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				[
+					SNew(STextBlock)
+					.Text(LOCTEXT("GitalongBinaryPathLabel", "Gitalong Path"))
+					.Font(Font)
+				]
+				+ SHorizontalBox::Slot()
+				.FillWidth(2.0f)
+				[
+					SNew(SFilePathPicker)
+					.BrowseButtonImage(FAppStyle::Get().GetBrush("PropertyWindow.Button_Ellipsis"))
+					.BrowseButtonStyle(FAppStyle::Get(), "HoverHintOnly")
+					.BrowseDirectory(FEditorDirectories::Get().GetLastDirectory(ELastDirectory::GENERIC_OPEN))
+					.BrowseTitle(LOCTEXT("GitalongBinaryPathBrowseTitle", "File picker..."))
+					.FilePath(this, &SGitSourceControlSettings::GetGitalongBinaryPathString)
+					.FileTypeFilter(FileFilterText)
+					.OnPathPicked(this, &SGitSourceControlSettings::OnGitalongBinaryPathPicked)
 				]
 			]
 			// Root of the local repository
@@ -291,75 +320,6 @@ void SGitSourceControlSettings::Construct(const FArguments& InArgs)
 					.Font(Font)
 				]
 			]
-			// Option to use the Git LFS File Locking workflow (false by default)
-			// Enabled even after init to switch it off in case of no network
-			// TODO LFS turning it off afterwards does not work because all files are readonly !
-			+ SVerticalBox::Slot()
-			  .AutoHeight()
-			  .Padding(2.0f)
-			  .VAlign(VAlign_Center)
-			[
-				SNew(SHorizontalBox)
-				.ToolTipText(LOCTEXT("UseGitLfsLocking_Tooltip", "Uses Git LFS 2 File Locking workflow (CheckOut and Commit/Push)."))
-				+ SHorizontalBox::Slot()
-				.FillWidth(0.1f)
-				[
-					SNew(SCheckBox)
-					.IsChecked(SGitSourceControlSettings::IsUsingGitLfsLocking())
-					.OnCheckStateChanged(this, &SGitSourceControlSettings::OnCheckedUseGitLfsLocking)
-					.IsEnabled(this, &SGitSourceControlSettings::CanUseGitLfsLocking)
-				]
-				+ SHorizontalBox::Slot()
-				  .FillWidth(0.9f)
-				  .VAlign(VAlign_Center)
-				[
-					SNew(STextBlock)
-					.Text(LOCTEXT("UseGitLfsLocking", "Uses Git LFS 2 File Locking workflow"))
-					.Font(Font)
-				]
-				// Username credential used to access the Git LFS 2 File Locks server
-				+ SHorizontalBox::Slot()
-				  .FillWidth(2.0f)
-				  .VAlign(VAlign_Center)
-				[
-					SNew(SEditableTextBox)
-					.Text(this, &SGitSourceControlSettings::GetLfsUserName)
-					.OnTextCommitted(this, &SGitSourceControlSettings::OnLfsUserNameCommited)
-					.IsEnabled(this, &SGitSourceControlSettings::GetIsUsingGitLfsLocking)
-					.HintText(LOCTEXT("LfsUserName_Hint", "Username to lock files on the LFS server"))
-					.Font(Font)
-				]
-			]
-			// Option that can be disabled to make Submit ONLY commit and not push
-			// This is useful in these cases:
-			//   - To do a bunch of local commits more quickly and push in one go
-			//   - Working disconnected
-			//   - To combine asset changes with C++ changes in one commit; you can amend the UE commit to add the C++ changes before push
-			// Push can be used separately and will unlock files if using LFS locking.
-			+ SVerticalBox::Slot()
-			  .AutoHeight()
-			  .Padding(2.0f)
-			  .VAlign(VAlign_Center)
-			[
-				SNew(SHorizontalBox)
-				.ToolTipText(LOCTEXT("GitPushAfterCommit_Tooltip", "Always try to Push (and unlock) after Commit on Submit when using LFS. Turning this off means you have to Push separately; Push will unlock LFS files."))
-				+ SHorizontalBox::Slot()
-				.FillWidth(0.1f)
-				[
-					SNew(SCheckBox)
-                    .IsChecked(SGitSourceControlSettings::IsPushAfterCommitEnabled())
-                    .OnCheckStateChanged(this, &SGitSourceControlSettings::OnIsPushAfterCommitEnabled)
-					.IsEnabled(this, &SGitSourceControlSettings::GetIsUsingGitLfsLocking)
-				]
-				+ SHorizontalBox::Slot()
-				  .FillWidth(3.f)
-				  .VAlign(VAlign_Center)
-				[
-					SNew(STextBlock)
-                    .Text(LOCTEXT("GitPushAfterCommit", "Submit means Commit AND Push"))
-                    .Font(Font)
-				]
-			]
 			// Option to Make the initial Git commit with custom message
 			+ SVerticalBox::Slot()
 			  .AutoHeight()
@@ -430,6 +390,28 @@ FString SGitSourceControlSettings::GetBinaryPathString() const
 	return GitSourceControl.AccessSettings().GetBinaryPath();
 }
 
+FString SGitSourceControlSettings::GetGitalongBinaryPathString() const
+{
+	const FGitSourceControlModule& GitSourceControl = FModuleManager::GetModuleChecked<FGitSourceControlModule>("GitSourceControl");
+	return GitSourceControl.AccessSettings().GetGitalongBinaryPath();
+}
+
+void SGitSourceControlSettings::OnGitalongBinaryPathPicked(const FString& PickedPath) const
+{
+	FGitSourceControlModule& GitSourceControl = FModuleManager::GetModuleChecked<FGitSourceControlModule>("GitSourceControl");
+	FString PickedFullPath = FPaths::ConvertRelativePathToFull(PickedPath);
+	const bool bChanged = GitSourceControl.AccessSettings().SetGitalongBinaryPath(PickedFullPath);
+	if (bChanged)
+	{
+		// Re-Check provided gitalong binary path for each change
+		GitSourceControl.GetProvider().CheckGitalongAvailability();
+		if (GitSourceControl.GetProvider().IsGitalongAvailable())
+		{
+			GitSourceControl.SaveSettings();
+		}
+	}
+}
+
 void SGitSourceControlSettings::OnBinaryPathPicked(const FString& PickedPath) const
 {
 	FGitSourceControlModule& GitSourceControl = FModuleManager::GetModuleChecked<FGitSourceControlModule>("GitSourceControl");
@@ -477,11 +459,8 @@ bool SGitSourceControlSettings::CanInitializeGitRepository() const
 	const FGitSourceControlModule& GitSourceControl = FModuleManager::GetModuleChecked<FGitSourceControlModule>("GitSourceControl");
 	const bool bGitAvailable = GitSourceControl.GetProvider().IsGitAvailable();
 	const bool bGitRepositoryFound = GitSourceControl.GetProvider().IsEnabled();
-	const FString LfsUserName = GitSourceControl.AccessSettings().GetLfsUserName();
-	const bool bIsUsingGitLfsLocking = GitSourceControl.AccessSettings().IsUsingGitLfsLocking();
-	const bool bGitLfsConfigOk = !bIsUsingGitLfsLocking || !LfsUserName.IsEmpty();
 	const bool bInitialCommitConfigOk = !bAutoInitialCommit || !InitialCommitMessage.IsEmpty();
-	return (bGitAvailable && !bGitRepositoryFound && bGitLfsConfigOk && bInitialCommitConfigOk);
+	return (bGitAvailable && !bGitRepositoryFound && bInitialCommitConfigOk);
 }
 
 bool SGitSourceControlSettings::CanInitializeGitLfs() const
@@ -490,15 +469,6 @@ bool SGitSourceControlSettings::CanInitializeGitLfs() const
 	const FString& PathToGitBinary = GitSourceControl.AccessSettings().GetBinaryPath();
 	const bool bGitLfsAvailable = GitSourceControl.GetProvider().GetGitVersion().bHasGitLfs;
 	return bGitLfsAvailable;
-}
-
-bool SGitSourceControlSettings::CanUseGitLfsLocking() const
-{
-	const FGitSourceControlModule& GitSourceControl = FModuleManager::GetModuleChecked<FGitSourceControlModule>("GitSourceControl");
-	const bool bGitLfsLockingAvailable = GitSourceControl.GetProvider().GetGitVersion().bHasGitLfsLocking;
-	// TODO LFS SRombauts : check if .gitattributes file is present and if Content/ is already tracked!
-	const bool bGitAttributesCreated = true;
-	return (bGitLfsLockingAvailable && (bAutoCreateGitAttributes || bGitAttributesCreated));
 }
 
 FReply SGitSourceControlSettings::OnClickedInitializeGitRepository()
@@ -559,16 +529,7 @@ FReply SGitSourceControlSettings::OnClickedInitializeGitRepository()
 
 			// 2.d. Create a ".gitattributes" file to enable Git LFS (Large File System) for the whole "Content/" subdir
 			const FString GitAttributesFilename = FPaths::Combine(FPaths::ProjectDir(), TEXT(".gitattributes"));
-			FString GitAttributesContent;
-			if (GitSourceControl.AccessSettings().IsUsingGitLfsLocking())
-			{
-				// Git LFS 2.x File Locking mechanism
-				GitAttributesContent = TEXT("Content/** filter=lfs diff=lfs merge=lfs -text lockable\n");
-			}
-			else
-			{
-				GitAttributesContent = TEXT("Content/** filter=lfs diff=lfs merge=lfs -text\n");
-			}
+			const FString GitAttributesContent = TEXT("Content/** filter=lfs diff=lfs merge=lfs -text\n");
 			if (FFileHelper::SaveStringToFile(GitAttributesContent, *GitAttributesFilename, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
 			{
 				ProjectFiles.Add(GitAttributesFilename);
@@ -710,55 +671,6 @@ FText SGitSourceControlSettings::GetReadmeContent() const
 void SGitSourceControlSettings::OnCheckedCreateGitAttributes(ECheckBoxState NewCheckedState)
 {
 	bAutoCreateGitAttributes = (NewCheckedState == ECheckBoxState::Checked);
-}
-
-void SGitSourceControlSettings::OnCheckedUseGitLfsLocking(ECheckBoxState NewCheckedState)
-{
-	FGitSourceControlModule& GitSourceControl = FModuleManager::GetModuleChecked<FGitSourceControlModule>("GitSourceControl");
-	GitSourceControl.AccessSettings().SetUsingGitLfsLocking(NewCheckedState == ECheckBoxState::Checked);
-	GitSourceControl.AccessSettings().SaveSettings();
-}
-
-bool SGitSourceControlSettings::GetIsUsingGitLfsLocking() const
-{
-	const FGitSourceControlModule& GitSourceControl = FModuleManager::GetModuleChecked<FGitSourceControlModule>("GitSourceControl");
-	return GitSourceControl.AccessSettings().IsUsingGitLfsLocking();
-}
-
-void SGitSourceControlSettings::OnIsPushAfterCommitEnabled(ECheckBoxState NewCheckedState)
-{
-	FGitSourceControlModule& GitSourceControl = FModuleManager::GetModuleChecked<FGitSourceControlModule>("GitSourceControl");
-	GitSourceControl.AccessSettings().SetIsPushAfterCommitEnabled(NewCheckedState == ECheckBoxState::Checked);
-	GitSourceControl.AccessSettings().SaveSettings();
-}
-
-bool SGitSourceControlSettings::GetIsPushAfterCommitEnabled() const
-{
-	const FGitSourceControlModule& GitSourceControl = FModuleManager::GetModuleChecked<FGitSourceControlModule>("GitSourceControl");
-	return GitSourceControl.AccessSettings().IsPushAfterCommitEnabled();
-}
-
-ECheckBoxState SGitSourceControlSettings::IsPushAfterCommitEnabled() const
-{
-	return (GetIsPushAfterCommitEnabled() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked);
-}
-
-ECheckBoxState SGitSourceControlSettings::IsUsingGitLfsLocking() const
-{
-	return (GetIsUsingGitLfsLocking() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked);
-}
-
-void SGitSourceControlSettings::OnLfsUserNameCommited(const FText& InText, ETextCommit::Type InCommitType)
-{
-	FGitSourceControlModule& GitSourceControl = FModuleManager::GetModuleChecked<FGitSourceControlModule>("GitSourceControl");
-	GitSourceControl.AccessSettings().SetLfsUserName(InText.ToString());
-	GitSourceControl.AccessSettings().SaveSettings();
-}
-
-FText SGitSourceControlSettings::GetLfsUserName() const
-{
-	const FGitSourceControlModule& GitSourceControl = FModuleManager::GetModuleChecked<FGitSourceControlModule>("GitSourceControl");
-	return FText::FromString(GitSourceControl.AccessSettings().GetLfsUserName());
 }
 
 void SGitSourceControlSettings::OnCheckedInitialCommit(ECheckBoxState NewCheckedState)
