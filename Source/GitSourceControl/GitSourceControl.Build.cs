@@ -20,16 +20,11 @@ public class GitSourceControl : ModuleRules
 				"SlateCore",
 				"InputCore",
 				"DesktopWidgets",
-				"EditorStyle",
 				"UnrealEd",
 				"SourceControl",
 				"Projects",
+				"ToolMenus",
 			}
 		);
-
-		if (Target.Version.MajorVersion == 5)
-		{
-			PrivateDependencyModuleNames.Add("ToolMenus");
-		}
 	}
 }

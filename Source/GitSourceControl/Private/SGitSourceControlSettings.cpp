@@ -24,11 +24,7 @@
 #include "Framework/Notifications/NotificationManager.h"
 #include "EditorDirectories.h"
 #include "Runtime/Launch/Resources/Version.h"
-#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 1
 #include "Styling/AppStyle.h"
-#else
-#include "EditorStyleSet.h"
-#endif
 #include "SourceControlOperations.h"
 #include "GitSourceControlModule.h"
 #include "GitSourceControlUtils.h"
@@ -37,11 +33,7 @@
 
 void SGitSourceControlSettings::Construct(const FArguments& InArgs)
 {
-#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 1
 	const FSlateFontInfo Font = FAppStyle::GetFontStyle(TEXT("SourceControl.LoginWindow.Font"));
-#else
-	const FSlateFontInfo Font = FEditorStyle::GetFontStyle(TEXT("SourceControl.LoginWindow.Font"));
-#endif
 
 	bAutoCreateGitIgnore = true;
 	bAutoCreateReadme = true;
@@ -57,16 +49,10 @@ void SGitSourceControlSettings::Construct(const FArguments& InArgs)
 	const FString FileFilterText = FString::Printf(TEXT("%s"), *FileFilterType.ToString());
 #endif
 
-	ReadmeContent = FText::FromString(FString(TEXT("# ")) + FApp::GetProjectName() + "\n\nDeveloped with Unreal Engine 4\n");
+	ReadmeContent = FText::FromString(FString(TEXT("# ")) + FApp::GetProjectName() + "\n\nDeveloped with Unreal Engine 5\n");
 
 	ChildSlot
 	[
-#if ENGINE_MAJOR_VERSION == 4
-		SNew(SBorder)
-		.BorderImage(FEditorStyle::GetBrush("DetailsView.CategoryBottom"))
-		.Padding(FMargin(0.0f, 3.0f, 0.0f, 0.0f))
-		[
-#endif
 			SNew(SVerticalBox)
 			// Path to the Git command line executable
 			+ SVerticalBox::Slot()
@@ -87,13 +73,8 @@ void SGitSourceControlSettings::Construct(const FArguments& InArgs)
 				.FillWidth(2.0f)
 				[
 					SNew(SFilePathPicker)
-#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 1
 					.BrowseButtonImage(FAppStyle::Get().GetBrush("PropertyWindow.Button_Ellipsis"))
 					.BrowseButtonStyle(FAppStyle::Get(), "HoverHintOnly")
-#else
-					.BrowseButtonImage(FEditorStyle::GetBrush("PropertyWindow.Button_Ellipsis"))
-					.BrowseButtonStyle(FEditorStyle::Get(), "HoverHintOnly")
-#endif
 					.BrowseDirectory(FEditorDirectories::Get().GetLastDirectory(ELastDirectory::GENERIC_OPEN))
 					.BrowseTitle(LOCTEXT("BinaryPathBrowseTitle", "File picker..."))
 					.FilePath(this, &SGitSourceControlSettings::GetBinaryPathString)
@@ -435,9 +416,6 @@ void SGitSourceControlSettings::Construct(const FArguments& InArgs)
 					.ContentPadding(6)
 				]
 			]
-#if ENGINE_MAJOR_VERSION == 4
-		]
-#endif
 	];
 }
 
@@ -691,11 +669,7 @@ void SGitSourceControlSettings::DisplaySuccessNotification(const FSourceControlO
 	const FText NotificationText = FText::Format(LOCTEXT("InitialCommit_Success", "{0} operation was successfull!"), FText::FromName(InOperation->GetName()));
 	FNotificationInfo Info(NotificationText);
 	Info.bUseSuccessFailIcons = true;
-#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 1
 	Info.Image = FAppStyle::GetBrush(TEXT("NotificationList.SuccessImage"));
-#else
-	Info.Image = FEditorStyle::GetBrush(TEXT("NotificationList.SuccessImage"));
-#endif
 	FSlateNotificationManager::Get().AddNotification(Info);
 }
 

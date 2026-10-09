@@ -4,9 +4,8 @@
 // or copy at http://opensource.org/licenses/MIT)
 
 #include "GitSourceControlState.h"
-#if ENGINE_MAJOR_VERSION == 5
-#include "Styling/AppStyle.h"
-#endif
+#include "RevisionControlStyle/RevisionControlStyle.h"
+#include "Textures/SlateIcon.h"
 
 #define LOCTEXT_NAMESPACE "GitSourceControl.State"
 
@@ -47,161 +46,54 @@ TSharedPtr<class ISourceControlRevision, ESPMode::ThreadSafe> FGitSourceControlS
 	return nullptr;
 }
 
-#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 3
-
 ISourceControlState::FResolveInfo FGitSourceControlState::GetResolveInfo() const
 {
 	return PendingResolveInfo;
 }
 
-#else
-
-TSharedPtr<class ISourceControlRevision, ESPMode::ThreadSafe> FGitSourceControlState::GetBaseRevForMerge() const
-{
-	for (const auto& Revision : History)
-	{
-		// look for the the SHA1 id of the file, not the commit id (revision)
-		if (Revision->FileHash == PendingMergeBaseFileHash)
-		{
-			return Revision;
-		}
-	}
-
-	return nullptr;
-}
-
-#endif
-
-#if ENGINE_MAJOR_VERSION == 5
-
 FSlateIcon FGitSourceControlState::GetIcon() const
 {
+	const FName StyleSetName = FRevisionControlStyleManager::GetStyleSetName();
+	if (LockState == ELockState::Locked)
+	{
+		return FSlateIcon(StyleSetName, "RevisionControl.CheckedOut");
+	}
+	else if (LockState == ELockState::LockedOther)
+	{
+		return FSlateIcon(StyleSetName, "RevisionControl.CheckedOutByOtherUser");
+	}
+	else if (!IsCurrent())
+	{
+		return FSlateIcon(StyleSetName, "RevisionControl.NotAtHeadRevision");
+	}
+
 	switch (WorkingCopyState)
 	{
 	case EWorkingCopyState::Modified:
-		return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Subversion.CheckedOut");
+		if (bUsingGitLfsLocking)
+		{
+			return FSlateIcon(StyleSetName, "RevisionControl.ModifiedLocally");
+		}
+		return FSlateIcon(StyleSetName, "RevisionControl.CheckedOut");
 	case EWorkingCopyState::Added:
-		return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Subversion.OpenForAdd");
+		return FSlateIcon(StyleSetName, "RevisionControl.OpenForAdd");
 	case EWorkingCopyState::Renamed:
 	case EWorkingCopyState::Copied:
-		return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Subversion.Branched");
+		return FSlateIcon(StyleSetName, "RevisionControl.Branched");
 	case EWorkingCopyState::Deleted: // Deleted & Missing files does not show in Content Browser
 	case EWorkingCopyState::Missing:
-		return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Subversion.MarkedForDelete");
+		return FSlateIcon(StyleSetName, "RevisionControl.MarkedForDelete");
 	case EWorkingCopyState::Conflicted:
-		return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Subversion.NotAtHeadRevision");
+		return FSlateIcon(StyleSetName, "RevisionControl.Conflicted");
 	case EWorkingCopyState::NotControlled:
-		return FSlateIcon(FAppStyle::GetAppStyleSetName(), "Subversion.NotInDepot");
+		return FSlateIcon(StyleSetName, "RevisionControl.NotInDepot");
 	case EWorkingCopyState::Unknown:
 	case EWorkingCopyState::Unchanged: // Unchanged is the same as "Pristine" (not checked out) for Perforce, ie no icon
 	case EWorkingCopyState::Ignored:
 	default:
 		return FSlateIcon();
 	}
-
-	return FSlateIcon();
 }
-
-#else
-
-// @todo add Slate icons for git specific states (NotAtHead vs Conflicted...)
-FName FGitSourceControlState::GetIconName() const
-{
-	if(LockState == ELockState::Locked)
-	{
-		return FName("Subversion.CheckedOut");
-	}
-	else if(LockState == ELockState::LockedOther)
-	{
-		return FName("Subversion.CheckedOutByOtherUser");
-	}
-	else if (!IsCurrent())
-	{
-		return FName("Subversion.NotAtHeadRevision");
-	}
-
-	switch(WorkingCopyState)
-	{
-	case EWorkingCopyState::Modified:
-		if(bUsingGitLfsLocking)
-		{
-			return FName("Subversion.NotInDepot");
-		}
-		else
-		{
-			return FName("Subversion.CheckedOut");
-		}
-	case EWorkingCopyState::Added:
-		return FName("Subversion.OpenForAdd");
-	case EWorkingCopyState::Renamed:
-	case EWorkingCopyState::Copied:
-		return FName("Subversion.Branched");
-	case EWorkingCopyState::Deleted: // Deleted & Missing files does not show in Content Browser
-	case EWorkingCopyState::Missing:
-		return FName("Subversion.MarkedForDelete");
-	case EWorkingCopyState::Conflicted:
-		return FName("Subversion.ModifiedOtherBranch");
-	case EWorkingCopyState::NotControlled:
-		return FName("Subversion.NotInDepot");
-	case EWorkingCopyState::Unknown:
-	case EWorkingCopyState::Unchanged: // Unchanged is the same as "Pristine" (not checked out) for Perforce, ie no icon
-	case EWorkingCopyState::Ignored:
-	default:
-		return NAME_None;
-	}
-
-	return NAME_None;
-}
-
-FName FGitSourceControlState::GetSmallIconName() const
-{
-	if(LockState == ELockState::Locked)
-	{
-		return FName("Subversion.CheckedOut_Small");
-	}
-	else if(LockState == ELockState::LockedOther)
-	{
-		return FName("Subversion.CheckedOutByOtherUser_Small");
-	}
-	else if (!IsCurrent())
-	{
-		return FName("Subversion.NotAtHeadRevision_Small");
-	}
-
-	switch(WorkingCopyState)
-	{
-	case EWorkingCopyState::Modified:
-		if(bUsingGitLfsLocking)
-		{
-			return FName("Subversion.NotInDepot_Small");
-		}
-		else
-		{
-			return FName("Subversion.CheckedOut_Small");
-		}
-	case EWorkingCopyState::Added:
-		return FName("Subversion.OpenForAdd_Small");
-	case EWorkingCopyState::Renamed:
-	case EWorkingCopyState::Copied:
-		return FName("Subversion.Branched_Small");
-	case EWorkingCopyState::Deleted: // Deleted & Missing files can appear in the Submit to Source Control window
-	case EWorkingCopyState::Missing:
-		return FName("Subversion.MarkedForDelete_Small");
-	case EWorkingCopyState::Conflicted:
-		return FName("Subversion.ModifiedOtherBranch_Small");
-	case EWorkingCopyState::NotControlled:
-		return FName("Subversion.NotInDepot_Small");
-	case EWorkingCopyState::Unknown:
-	case EWorkingCopyState::Unchanged: // Unchanged is the same as "Pristine" (not checked out) for Perforce, ie no icon
-	case EWorkingCopyState::Ignored:
-	default:
-		return NAME_None;
-	}
-
-	return NAME_None;
-}
-
-#endif
 
 FText FGitSourceControlState::GetDisplayName() const
 {

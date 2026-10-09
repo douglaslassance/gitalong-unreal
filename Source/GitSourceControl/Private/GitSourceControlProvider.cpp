@@ -152,8 +152,6 @@ FText FGitSourceControlProvider::GetStatusText() const
 	return FText::Format(NSLOCTEXT("Status", "Provider: Git\nEnabledLabel", "Local repository: {RepositoryName}\nRemote origin: {RemoteUrl}\nUser: {UserName}\nE-mail: {UserEmail}\n[{BranchName} {CommitId}] {CommitSummary}"), Args);
 }
 
-#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 3
-
 TMap<ISourceControlProvider::EStatus, FString> FGitSourceControlProvider::GetStatus() const
 {
 	TMap<EStatus, FString> Result;
@@ -166,8 +164,6 @@ TMap<ISourceControlProvider::EStatus, FString> FGitSourceControlProvider::GetSta
 	Result.Add(EStatus::Email, UserEmail);
 	return Result;
 }
-
-#endif
 
 /** Quick check if source control is enabled */
 bool FGitSourceControlProvider::IsEnabled() const
@@ -208,12 +204,10 @@ ECommandResult::Type FGitSourceControlProvider::GetState(const TArray<FString>& 
 	return ECommandResult::Succeeded;
 }
 
-#if ENGINE_MAJOR_VERSION == 5
 ECommandResult::Type FGitSourceControlProvider::GetState(const TArray<FSourceControlChangelistRef>& InChangelists, TArray<FSourceControlChangelistStateRef>& OutState, EStateCacheUsage::Type InStateCacheUsage)
 {
 	return ECommandResult::Failed;
 }
-#endif
 
 TArray<FSourceControlStateRef> FGitSourceControlProvider::GetCachedStateByPredicate(TFunctionRef<bool(const FSourceControlStateRef&)> Predicate) const
 {
@@ -255,11 +249,7 @@ void FGitSourceControlProvider::UnregisterSourceControlStateChanged_Handle(FDele
 	OnSourceControlStateChanged.Remove(Handle);
 }
 
-#if ENGINE_MAJOR_VERSION == 5
 ECommandResult::Type FGitSourceControlProvider::Execute(const FSourceControlOperationRef& InOperation, FSourceControlChangelistPtr InChangelist, const TArray<FString>& InFiles, EConcurrency::Type InConcurrency /* = EConcurrency::Synchronous */, const FSourceControlOperationComplete& InOperationCompleteDelegate)
-#else
-ECommandResult::Type FGitSourceControlProvider::Execute(const TSharedRef<ISourceControlOperation, ESPMode::ThreadSafe>& InOperation, const TArray<FString>& InFiles, EConcurrency::Type InConcurrency /* = EConcurrency::Synchronous */, const FSourceControlOperationComplete& InOperationCompleteDelegate)
-#endif
 {
 	if (!IsEnabled() && !(InOperation->GetName() == "Connect")) // Only Connect operation allowed while not Enabled (Repository found)
 	{
@@ -341,24 +331,14 @@ bool FGitSourceControlProvider::UsesFileRevisions() const
 	return false; // Partial 'Sync' doesn't make sense for Git, only for Perforce
 }
 
-/**
- * Whether the current source control client is at the latest version. Used to enable a global 'Sync' button on the Toolbar.
- * @note Experimental, hidden behind an setting in XxxEditor.ini [SourceControlSettings] DisplaySourceControlSyncStatus=true
- * @note This concept is currently only implemented for the Skein source control provider.
- */
-TOptional<bool> FGitSourceControlProvider::IsAtLatestRevision() const
+TOptional<bool> FGitSourceControlProvider::HasChangesToSync() const
 {
 	return TOptional<bool>();
 }
 
-/**
- * Returns the number of changes in the local workspace. Used to enable a global 'CheckIn' button on the Toolbar.
- * @note Experimental, hidden behind an setting in XxxEditor.ini [SourceControlSettings] DisplaySourceControlCheckInStatus=true
- * @note This concept is currently only implemented for the Skein source control provider.
- */
-TOptional<int> FGitSourceControlProvider::GetNumLocalChanges() const
+TOptional<bool> FGitSourceControlProvider::HasChangesToCheckIn() const
 {
-	return TOptional<int>();
+	return TOptional<bool>();
 }
 
 bool FGitSourceControlProvider::UsesUncontrolledChangelists() const
@@ -367,6 +347,11 @@ bool FGitSourceControlProvider::UsesUncontrolledChangelists() const
 }
 
 bool FGitSourceControlProvider::UsesSnapshots() const
+{
+	return false;
+}
+
+bool FGitSourceControlProvider::UsesSoftRevertOnDelete() const
 {
 	return false;
 }
@@ -470,12 +455,10 @@ TArray<TSharedRef<ISourceControlLabel>> FGitSourceControlProvider::GetLabels(con
 	return Tags;
 }
 
-#if ENGINE_MAJOR_VERSION == 5
 TArray<FSourceControlChangelistRef> FGitSourceControlProvider::GetChangelists(EStateCacheUsage::Type InStateCacheUsage)
 {
 	return TArray<FSourceControlChangelistRef>();
 }
-#endif
 
 #if SOURCE_CONTROL_WITH_SLATE
 TSharedRef<class SWidget> FGitSourceControlProvider::MakeSettingsWidget() const

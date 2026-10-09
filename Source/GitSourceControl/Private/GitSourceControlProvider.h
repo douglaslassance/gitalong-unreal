@@ -14,8 +14,6 @@
 #include "GitSourceControlMenu.h"
 #include "GitSourceControlConsole.h"
 
-#include "Runtime/Launch/Resources/Version.h"
-
 class FGitSourceControlCommand;
 
 DECLARE_DELEGATE_RetVal(FGitSourceControlWorkerRef, FGetGitSourceControlWorker)
@@ -62,44 +60,36 @@ public:
 	virtual void Init(bool bForceConnection = true) override;
 	virtual void Close() override;
 	virtual FText GetStatusText() const override;
-#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 3
 	virtual TMap<EStatus, FString> GetStatus() const override;
-#endif
 	virtual bool IsEnabled() const override;
 	virtual bool IsAvailable() const override;
 	virtual const FName& GetName(void) const override;
 	virtual bool QueryStateBranchConfig(const FString& ConfigSrc, const FString& ConfigDest) override { return false; }
 	virtual void RegisterStateBranches(const TArray<FString>& BranchNames, const FString& ContentRoot) override {}
 	virtual int32 GetStateBranchIndex(const FString& InBranchName) const override { return INDEX_NONE; }
+	virtual bool GetStateBranchAtIndex(int32 BranchIndex, FString& OutBranchName) const override { return false; }
 	virtual ECommandResult::Type GetState(const TArray<FString>& InFiles, TArray<FSourceControlStateRef>& OutState, EStateCacheUsage::Type InStateCacheUsage) override;
-#if ENGINE_MAJOR_VERSION == 5
 	virtual ECommandResult::Type GetState(const TArray<FSourceControlChangelistRef>& InChangelists, TArray<FSourceControlChangelistStateRef>& OutState, EStateCacheUsage::Type InStateCacheUsage) override;
-#endif
 	virtual TArray<FSourceControlStateRef> GetCachedStateByPredicate(TFunctionRef<bool(const FSourceControlStateRef&)> Predicate) const override;
 	virtual FDelegateHandle RegisterSourceControlStateChanged_Handle(const FSourceControlStateChanged::FDelegate& SourceControlStateChanged) override;
 	virtual void UnregisterSourceControlStateChanged_Handle(FDelegateHandle Handle) override;
-#if ENGINE_MAJOR_VERSION == 5
 	virtual ECommandResult::Type Execute(const FSourceControlOperationRef& InOperation, FSourceControlChangelistPtr InChangelist, const TArray<FString>& InFiles, EConcurrency::Type InConcurrency = EConcurrency::Synchronous, const FSourceControlOperationComplete& InOperationCompleteDelegate = FSourceControlOperationComplete() ) override;
-#else
-	virtual ECommandResult::Type Execute(const FSourceControlOperationRef& InOperation, const TArray<FString>& InFiles, EConcurrency::Type InConcurrency = EConcurrency::Synchronous, const FSourceControlOperationComplete& InOperationCompleteDelegate = FSourceControlOperationComplete() ) override;
-#endif
-	virtual bool CanExecuteOperation( const FSourceControlOperationRef& InOperation ) const; /* override	NOTE: added in UE5.3 */
+	virtual bool CanExecuteOperation( const FSourceControlOperationRef& InOperation ) const override;
 	virtual bool CanCancelOperation(const FSourceControlOperationRef& InOperation) const override;
 	virtual void CancelOperation(const FSourceControlOperationRef& InOperation) override;
 	virtual bool UsesLocalReadOnlyState() const override;
 	virtual bool UsesChangelists() const override;
 	virtual bool UsesCheckout() const override;
-	virtual bool UsesFileRevisions() const; /* override				NOTE: added in UE5.1 */
-	virtual TOptional<bool> IsAtLatestRevision() const; /* override	NOTE: added in UE5.1 */
-	virtual TOptional<int> GetNumLocalChanges() const; /* override	NOTE: added in UE5.1 */
-	virtual bool UsesUncontrolledChangelists() const; /* override   NOTE: added in UE5.2 */
-	virtual bool UsesSnapshots() const; /* override   NOTE: added in UE5.2 */
-	virtual bool AllowsDiffAgainstDepot() const; /* override   NOTE: added in UE5.2 */
+	virtual bool UsesFileRevisions() const override;
+	virtual bool UsesUncontrolledChangelists() const override;
+	virtual bool UsesSnapshots() const override;
+	virtual bool UsesSoftRevertOnDelete() const override;
+	virtual bool AllowsDiffAgainstDepot() const override;
+	virtual TOptional<bool> HasChangesToSync() const override;
+	virtual TOptional<bool> HasChangesToCheckIn() const override;
 	virtual void Tick() override;
 	virtual TArray< TSharedRef<class ISourceControlLabel> > GetLabels(const FString& InMatchingSpec) const override;
-#if ENGINE_MAJOR_VERSION == 5
 	virtual TArray<FSourceControlChangelistRef> GetChangelists(EStateCacheUsage::Type InStateCacheUsage) override;
-#endif
 #if SOURCE_CONTROL_WITH_SLATE
 	virtual TSharedRef<class SWidget> MakeSettingsWidget() const override;
 #endif
